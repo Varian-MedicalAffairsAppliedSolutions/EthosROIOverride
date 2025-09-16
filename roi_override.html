@@ -962,6 +962,9 @@
 </head>
 <body>
     <div class="app-container">
+        <div style="background: var(--error); color: #ffffff; text-align: center; padding: 6px 10px; font-weight: 700; letter-spacing: 0.03em; border-bottom: 1px solid var(--panel-border); position: sticky; top: 0; z-index: 1002;">
+            **NOT VALIDATED FOR CLINICAL USE**
+        </div>
         <div class="header">
             <div class="header-content">
                 <div class="logo-section">
@@ -1197,6 +1200,7 @@
           <button class="modal-close" title="Close" onclick="closeHelpModal()">×</button>
         </div>
         <div class="modal-body">
+          <p style="color: var(--accent-secondary); font-weight: 800; text-transform: none;">For Educational and Research Purpose. Not Validated For Clinical Use.</p>
           <h3>Purpose</h3>
           <p>Burn ROI contours from DICOM RTSTRUCT into CT image pixels to create derived “annotation baked-in” DICOM series for review or system ingestion. Not for primary diagnosis.</p>
 
@@ -1218,13 +1222,13 @@
             <li>Jump to ROI: double-click its name</li>
           </ul>
 
-          <h3>Open Source Licenses</h3>
+          <h3>Dependencies and Licenses</h3>
           <ul>
-            <li>dcmjs — MIT — https://github.com/dcmjs-org/dcmjs</li>
-            <li>dicomParser — MIT — https://github.com/cornerstonejs/dicomParser</li>
-            <li>JSZip — MIT — https://github.com/Stuk/jszip</li>
-            <li>Electron — MIT — https://www.electronjs.org/</li>
-            <li>electron-builder — MIT — https://github.com/electron-userland/electron-builder</li>
+            <li>dcmjs — MIT — <a href="https://github.com/dcmjs-org/dcmjs" target="_blank" rel="noreferrer noopener" style="color: var(--accent-secondary);">github.com/dcmjs-org/dcmjs</a></li>
+            <li>dicomParser — MIT — <a href="https://github.com/cornerstonejs/dicomParser" target="_blank" rel="noreferrer noopener" style="color: var(--accent-secondary);">github.com/cornerstonejs/dicomParser</a></li>
+            <li>JSZip — MIT — <a href="https://github.com/Stuk/jszip" target="_blank" rel="noreferrer noopener" style="color: var(--accent-secondary);">github.com/Stuk/jszip</a></li>
+            <li>Electron — MIT — <a href="https://github.com/electron/electron" target="_blank" rel="noreferrer noopener" style="color: var(--accent-secondary);">@https://github.com/electron/electron</a></li>
+            <li>electron-builder — MIT — <a href="https://github.com/electron-userland/electron-builder" target="_blank" rel="noreferrer noopener" style="color: var(--accent-secondary);">github.com/electron-userland/electron-builder</a></li>
           </ul>
           <details>
             <summary>MIT License Text</summary>
@@ -1248,7 +1252,42 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 </pre>
           </details>
-          <p class="muted">Press F1 to open the full About window.</p>
+          <details>
+            <summary>Varian Limited Use Software License Agreement</summary>
+<pre>
+This Limited Use Software License Agreement (the "Agreement") is a legal agreement between you, the user ("You"), and Varian Medical Systems, Inc. ("Varian"). By downloading or otherwise accessing the software material, which includes source code (the "Source Code") and related software tools (collectively, the "Software"), You are agreeing to be bound by the terms of this Agreement. If You are entering into this Agreement on behalf of an institution or company, You represent and warrant that You are authorized to do so. If You do not agree to the terms of this Agreement, You may not use the Software and must immediately destroy any Software You may have downloaded or copied.
+
+SOFTWARE LICENSE
+
+1. Grant of License. Varian grants to You a non-transferable, non-sublicensable license to use the Software solely as provided in Section 2 (Permitted Uses) below. Access to the Software will be facilitated through a source code repository provided by Varian.
+
+2. Permitted Uses. You may download, compile and use the Software. You may (but are not required to) suggest improvements or provide feedback to Varian. You may modify the Software solely in support of such use, and You may upload such modified Software to Varian's source code repository. Any derivation of the Software (including compiled binaries) must prominently display the terms and conditions of this Agreement in the interactive user interface, such that use of the Software cannot continue until the user has acknowledged having read this Agreement via click-through.
+
+3. Publications. Solely in connection with your permitted use, You may reference this Software in academic research publications after notifying an authorized representative of Varian in writing in each instance. You may not reference the Software in any way that may indicate or imply approval or endorsement by Varian of the results of any use of the Software by You.
+
+4. Prohibited Uses. You may not distribute the Software or any modifications for any purpose. You may not disclose the Software to any third party without prior express written consent of an authorized representative of Varian. You may not reproduce, copy or disclose to others, in whole or in any part, the Software or modifications, except within Your own institution or company, as applicable, to facilitate Your permitted use. You agree not to export or use the Software in violation of applicable law.
+
+5. Intellectual Property Rights. All intellectual property rights in the Software and any modifications are owned solely and exclusively by Varian. You shall have no ownership or other proprietary interest in the Software or any modifications. You hereby transfer and assign to Varian all right, title and interest in any such modifications that you may have made or contributed, and waive any moral rights or rights of attribution relating to any modifications of the Software.
+
+6. No Support Obligations. Varian is under no obligation to provide any support or technical assistance in connection with the Software or any modifications. Any such support or assistance is entirely discretionary and may be discontinued at any time without liability.
+
+7. NO WARRANTIES. THE SOFTWARE AND ANY SUPPORT PROVIDED BY VARIAN ARE PROVIDED "AS IS" AND "WITH ALL FAULTS." VARIAN DISCLAIMS ALL WARRANTIES, BOTH EXPRESS AND IMPLIED, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. VARIAN DOES NOT WARRANT THAT THE OPERATION OF THE SOFTWARE WILL BE UNINTERRUPTED, ERROR FREE OR MEET YOUR SPECIFIC REQUIREMENTS OR INTENDED USE.
+
+8. No Regulatory Clearance. The Software is not cleared or approved for use by any regulatory body in any jurisdiction.
+
+9. Termination. You may terminate this Agreement at any time upon written notice to Varian. Varian may terminate this Agreement at any time upon notice to You if Varian determines that you are not using the Software in accordance with this Agreement or have otherwise breached any provision. Upon termination, You must destroy the Software and any modifications.
+
+10. Limitation of Liability. IN NO EVENT SHALL VARIAN BE LIABLE FOR LOSS OF DATA, LOSS OF PROFITS, LOST SAVINGS, SPECIAL, INCIDENTAL, CONSEQUENTIAL, INDIRECT OR OTHER SIMILAR DAMAGES, EVEN IF VARIAN HAS BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES, OR FOR ANY CLAIM BY ANY OTHER PARTY.
+
+11. Indemnification. You will defend, indemnify and hold harmless Varian, its affiliates and their respective officers, directors, employees, sublicensees, contractors, users and agents from any and all claims, losses, liabilities, damages, expenses and costs arising out of any third-party claims related to or arising from your use of the Software or any modifications to the Software.
+
+12. Assignment. You may not assign any of Your rights or obligations under this Agreement without the written consent of Varian.
+
+13. Governing Law. This Agreement will be governed by the laws of the State of California and the United States of America without regard to conflicts of law provisions. The parties agree to the exclusive jurisdiction of the state and federal courts located in Santa Clara County, California.
+
+14. Entire Agreement. This Agreement is the entire agreement of the parties as to the subject matter and supersedes all prior written and oral agreements and understandings relating to same. The Agreement may only be modified or amended in a writing signed by the parties.
+</pre>
+          </details>
         </div>
       </div>
     </div>
@@ -1259,5 +1298,10 @@ SOFTWARE.
       window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeHelpModal(); });
       document.addEventListener('click', (e)=>{ const o=document.getElementById('helpModal'); if(o && e.target===o) closeHelpModal();});
     </script>
+    
+    <div style="text-align: center; padding: 10px 0 16px; font-size: 12px; color: var(--text-secondary);">
+      By using this software, you agree to the
+      <a href="gate/VarianLUSLA.html" target="_blank" rel="noreferrer noopener" style="color: var(--accent-primary); text-decoration: none;">Varian Limited Use Software License Agreement</a>
+    </div>
 </body>
 </html>
