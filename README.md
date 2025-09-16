@@ -1,9 +1,9 @@
 [README.md](https://github.com/user-attachments/files/22365002/README.md)
-# ROI Override Tool
+# ROI Override Tool (Non-Clinical)
 
 Burn DICOM RTSTRUCT contours into CT image pixels to generate derived “annotation baked‑in” DICOM series for review or system ingestion. This repository provides a browser/Electron implementation (`roi_override.html` + `roi_override.js`) and a Python desktop alternative (`roi_override.py`).
 
-# Important: Not validated for clinical use.
+## Important: Not validated for clinical use.
 
 ## UI Overview
 
