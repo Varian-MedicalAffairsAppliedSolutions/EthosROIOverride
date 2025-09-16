@@ -420,6 +420,10 @@ function extractROIData() {
         });
     }
     
+    // Sort alphabetically by ROI name (case-insensitive) and reindex numbers
+    roiData.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+    roiData.forEach((roi, idx) => { roi.number = idx + 1; });
+    
     // Display ROIs in the sidebar visibility controls
     populateROIVisibilityList();
 }
