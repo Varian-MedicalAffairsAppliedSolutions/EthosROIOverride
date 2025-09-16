@@ -178,7 +178,7 @@ This tool is actively developed for research and educational applications. Featu
 
 ## License
 
-This project is licensed under the MIT License.
+This project is licensed under the Varian Limited Use Software License Agreement (LUSLA).
 
 ---
 
