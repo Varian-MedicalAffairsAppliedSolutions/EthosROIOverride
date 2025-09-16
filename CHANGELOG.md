@@ -1,7 +1,19 @@
+[CHANGELOG.md](https://github.com/user-attachments/files/22365655/CHANGELOG.md)
 # Changelog
 # Changelog
 
 All notable changes to this project will be documented in this file.
+
+## 1.0.3 — 2025-09-16
+
+- Replaced gate with PlanDeliverySimulator-style flow; added offline QR and JotForm iframe embed.
+- Changed access code and enforced registration guard on `roi_override.html`.
+- Added sticky top banner: **NOT VALIDATED FOR CLINICAL USE**.
+- Help/About: added bold orange disclaimer; renamed “Open Source Licenses” to “Dependencies and Licenses”; made links clickable and orange; inlined Varian LUSLA text as a collapsible section.
+- Added footer license link and About section updates; removed unused F1 hint.
+- README updates: UI Overview image, System Requirements (Browser), Support and Development, license switched to Varian LUSLA, important disclaimer.
+- Gate pages updated and standardized (`gate/index.html`, `gate/register.html`, `gate/check-registration.html`, `gate/VarianLUSLA.html`).
+- ROI list now sorted alphabetically by name in the sidebar.
 
 ## 1.0.2 — 2025-09-12
 
