@@ -3,7 +3,7 @@
 
 Burn DICOM RTSTRUCT contours into CT image pixels to generate derived “annotation baked‑in” DICOM series for review or system ingestion. This repository provides a browser/Electron implementation (`roi_override.html` + `roi_override.js`) and a Python desktop alternative (`roi_override.py`).
 
-Important: Not for primary diagnosis. Verify results before clinical use.
+Important: ## Not validated for clinical use.
 
 ## UI Overview
 
