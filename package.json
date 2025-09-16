@@ -1,0 +1,43 @@
+{
+    "name": "roi-override-electron",
+    "version": "1.0.2",
+    "buildNumber": 1,
+    "description": "ROI Override Tool packaged as an Electron desktop app",
+    "main": "main.js",
+    "scripts": {
+        "start": "electron .",
+        "dev": "electron .",
+        "build": "npm run icon && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder -w portable",
+        "icon": "node scripts/gen_icon.js"
+    },
+    "author": "",
+    "license": "MIT",
+    "devDependencies": {
+        "electron": "^38.1.0",
+        "electron-builder": "24.13.3",
+        "png-to-ico": "2.1.8",
+        "sharp": "0.33.4"
+    },
+    "build": {
+        "appId": "com.ethos.roioverride",
+        "productName": "ROI Override Tool",
+        "asar": true,
+        "files": [
+            "**/*",
+            "!node_modules/**/test{,s}/**",
+            "!node_modules/**/.bin/**",
+            "!**/*.map"
+        ],
+        "directories": {
+            "buildResources": "build"
+        },
+        "win": {
+            "target": [
+                "portable"
+            ],
+            "artifactName": "ROI-Override-${version}.exe",
+            "signAndEditExecutable": false,
+            "icon": "build/icon.ico"
+        }
+    }
+}

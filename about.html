@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>About ROI Override Tool</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Inter, Helvetica, Arial, sans-serif; margin: 0; color: #e6e6e6; background: #121212; }
+    .wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 22px; margin: 0 0 8px; }
+    h2 { font-size: 16px; margin: 20px 0 8px; color: #00a19c; }
+    p, li { font-size: 13px; line-height: 1.55; color: #d0d0d0; }
+    code { background: #1f1f1f; padding: 1px 4px; border-radius: 3px; }
+    .muted { color: #a0a0a0; font-size: 12px; }
+    .card { background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 8px; padding: 16px; margin: 16px 0; }
+    details { background: #161616; border: 1px solid #2a2a2a; border-radius: 6px; padding: 10px 14px; margin: 8px 0; }
+    summary { cursor: pointer; color: #e6e6e6; font-weight: 600; }
+    a { color: #27c0ba; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    pre { background: #0f0f0f; color: #cfcfcf; border: 1px solid #2a2a2a; padding: 12px; overflow: auto; border-radius: 6px; font-size: 12px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    .kvs { display: flex; gap: 20px; flex-wrap: wrap; }
+    .kv { font-size: 12px; color: #bfbfbf; }
+    .kv b { color: #e6e6e6; }
+  </style>
+  <script>
+    function getQueryParam(name) {
+      const url = new URL(window.location.href);
+      return url.searchParams.get(name);
+    }
+    window.addEventListener('DOMContentLoaded', () => {
+      const version = getQueryParam('version') || '';
+      const build = getQueryParam('build') || '';
+      document.getElementById('appVersion').textContent = version;
+      const buildEl = document.getElementById('appBuild');
+      if (buildEl && build) buildEl.textContent = build;
+    });
+  </script>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>ROI Override Tool</h1>
+      <div class="kvs">
+        <div class="kv">Version: <b id="appVersion">-</b></div>
+        <div class="kv">Build: <b id="appBuild">-</b></div>
+        <div class="kv">Platform: <b>Electron (Windows)</b></div>
+      </div>
+
+      <div class="card">
+        <h2>Purpose</h2>
+        <p>
+          Burn ROI contours from DICOM RT Structure Sets (RTSTRUCT) into CT image pixels to create derived “annotation baked-in” DICOM series for review or system ingestion. Not for primary diagnosis. Validate before use in clinical workflows.
+        </p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Instructions for Use (IFU)</h2>
+          <details open>
+            <summary>System Requirements</summary>
+            <ul>
+              <li>Windows 10/11 64-bit</li>
+              <li>8 GB+ RAM recommended</li>
+              <li>Local disk space for exported ZIPs</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Inputs/Outputs</summary>
+            <ul>
+              <li>Inputs: One CT series (.dcm) and optionally one or more RTSTRUCT files of same study</li>
+              <li>Outputs: Burned CT DICOM files packaged into a ZIP (combined or per-ROI)</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Workflow</summary>
+            <ol>
+              <li>Import a folder of CT DICOMs. If multiple series are detected, choose one.</li>
+              <li>If RTSTRUCTs are present, pick the one referencing the CT series (or continue without).</li>
+              <li>Use the RT Structure panel to Show/Hide ROIs and toggle “Include in burn‑in”.</li>
+              <li>Configure Burn‑In Controls: Series Name (optional), Line Width, Line Style, Default HU.</li>
+              <li>Preview updates live in white when toggling ROIs or changing style/width.</li>
+              <li>Click Burn & Export. Choose combined series or separate per‑ROI series.</li>
+              <li>Save the resulting ZIP and verify outputs visually.</li>
+            </ol>
+          </details>
+          <details>
+            <summary>Notes</summary>
+            <ul>
+              <li>Contours are densified to ~1 mm spacing for continuous lines.</li>
+              <li>Burn-in stamps HU values along contour paths. Fill is not applied by default.</li>
+              <li>Tag updates are best-effort in-place when fields exist (UIDs, SeriesDescription, BurnedInAnnotation, DerivationDescription).</li>
+              <li>Single‑click an ROI name to show/hide its overlay; double‑click to jump the crosshair to the ROI center.</li>
+            </ul>
+          </details>
+          <details>
+            <summary>Limitations</summary>
+            <ul>
+              <li>Assumes consistent CT orientation and valid RTSTRUCT references (ContourImageSequence → ReferencedSOPInstanceUID).</li>
+              <li>Missing or unusual metadata may reduce functionality.</li>
+              <li>Outputs are derived; originals are unaffected.</li>
+            </ul>
+          </details>
+          <p class="muted">Safety: Intended for research or workflow preparation. Not for primary diagnosis. Always validate outputs and ensure downstream acceptance.</p>
+        </div>
+
+        <div class="card">
+          <h2>Open Source Licenses</h2>
+          <p>This application includes or uses the following open source components:</p>
+          <ul>
+            <li>dcmjs — MIT — <a href="https://github.com/dcmjs-org/dcmjs" target="_blank" rel="noreferrer noopener">github.com/dcmjs-org/dcmjs</a></li>
+            <li>dicomParser — MIT — <a href="https://github.com/cornerstonejs/dicomParser" target="_blank" rel="noreferrer noopener">github.com/cornerstonejs/dicomParser</a></li>
+            <li>JSZip — MIT — <a href="https://github.com/Stuk/jszip" target="_blank" rel="noreferrer noopener">github.com/Stuk/jszip</a></li>
+            <li>Electron — MIT — <a href="https://www.electronjs.org/" target="_blank" rel="noreferrer noopener">electronjs.org</a></li>
+            <li>electron-builder — MIT — <a href="https://github.com/electron-userland/electron-builder" target="_blank" rel="noreferrer noopener">github.com/electron-userland/electron-builder</a></li>
+          </ul>
+          <details>
+            <summary>MIT License Text</summary>
+            <pre>
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+            </pre>
+          </details>
+          <p class="muted">Full license texts are available at the respective project links above.</p>
+        </div>
+      </div>
+
+      <p class="muted">© ROI Override Tool</p>
+    </div>
+  </body>
+  </html>

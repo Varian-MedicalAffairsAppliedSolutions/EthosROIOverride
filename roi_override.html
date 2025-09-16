@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROI Override Tool | Medical Imaging</title>
+    <script>
+        (function enforceRegistrationGate(){
+            try {
+                var isRegistered = localStorage.getItem('roioverride_registered');
+                var token = localStorage.getItem('roioverride_registration_token');
+                if (isRegistered !== 'true' || token !== '1280003') {
+                    var qs = window.location.search || '';
+                    window.location.replace('gate/index.html' + qs);
+                }
+            } catch (e) {
+                var qs2 = window.location.search || '';
+                window.location.replace('gate/index.html' + qs2);
+            }
+        })();
+    </script>
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1bG1kAAAAASUVORK5CYII=" />
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            /* Siemens Official Colors */
+            --siemens-petrol: #009999;      /* Siemens Petrol 100% */
+            --siemens-orange: #ec6602;      /* Healthy Orange 100% */
+            --black-100: #000000;            /* Black 100% */
+            --black-75: #404040;             /* Black 75% */
+            --black-50: #808080;             /* Black 50% */
+            --black-25: #bfbfbf;             /* Black 25% */
+            --black-10: #e6e6e6;             /* Black 10% */
+            --black-7: #ededed;              /* Black 7% */
+            
+            /* Application theme mapping */
+            --primary-dark: #000000;
+            --secondary-dark: #404040;
+            --accent-primary: #009999;
+            --accent-secondary: #ec6602;
+            --accent-hover: #007777;
+            --panel-bg: #404040;
+            --panel-border: #808080;
+            --text-primary: #ffffff;
+            --text-secondary: #bfbfbf;
+            --text-dim: #808080;
+            --success: #009999;
+            --error: #ec6602;
+            --warning: #ec6602;
+            --input-bg: #000000;
+            --input-border: #808080;
+            --hover-bg: #404040;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--secondary-dark);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        
+        .header {
+            background: var(--primary-dark);
+            padding: 0;
+            border-bottom: 1px solid var(--panel-border);
+            display: flex;
+            align-items: center;
+            height: 56px;
+        }
+        
+        .header-content {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            padding: 0 24px;
+            justify-content: space-between;
+        }
+        
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .logo {
+            width: 32px;
+            height: 32px;
+            background: var(--accent-primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 16px;
+        }
+        
+        .app-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+        }
+        
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            color: var(--text-secondary);
+            font-size: 13px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--success);
+        }
+        
+        .main-layout {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+        
+        .sidebar {
+            width: 320px;
+            background: var(--panel-bg);
+            border-right: 1px solid var(--panel-border);
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar-section {
+            padding: 20px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+        
+        .section-header {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .section-header::before {
+            content: '';
+            width: 3px;
+            height: 12px;
+            background: var(--accent-primary);
+            border-radius: 2px;
+        }
+        
+        .file-upload-area {
+            background: var(--input-bg);
+            border: 2px dashed var(--input-border);
+            border-radius: 8px;
+            padding: 24px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .file-upload-area:hover {
+            border-color: var(--accent-primary);
+            background: var(--black-7);
+        }
+        
+        .file-upload-area input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        
+        .upload-icon {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto 12px;
+            background: var(--accent-primary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+        
+        .upload-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+        
+        .upload-hint {
+            font-size: 11px;
+            color: var(--text-dim);
+        }
+        
+        .roi-list-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+        
+        .roi-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .roi-item {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            padding: 12px 16px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .roi-item:hover {
+            background: var(--hover-bg);
+            border-color: var(--accent-primary);
+        }
+        
+        .roi-item.selected {
+            background: var(--black-10);
+            border-color: var(--accent-primary);
+        }
+        
+        .roi-item.selected::after {
+            content: '✓';
+            color: var(--accent-primary);
+            font-weight: 600;
+        }
+        
+        .add-roi-button {
+            margin: 20px;
+            margin-top: 0;
+            padding: 12px;
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .add-roi-button:hover {
+            background: var(--accent-hover);
+            transform: translateY(-1px);
+        }
+        
+        .toggle-all-btn {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .toggle-all-btn:hover {
+            background: var(--accent-hover);
+        }
+        
+        .content-area {
+            flex: 1;
+            background: var(--primary-dark);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .toolbar {
+            background: var(--panel-bg);
+            border-bottom: 1px solid var(--panel-border);
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+        }
+        
+        .patient-info {
+            display: flex;
+            gap: 32px;
+            flex: 1;
+        }
+        
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .info-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            letter-spacing: 0.05em;
+        }
+        
+        .info-value {
+            font-size: 14px;
+            color: var(--text-primary);
+            font-weight: 500;
+        }
+        
+        .workspace {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+        
+        .control-panel {
+            background: var(--panel-bg);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .control-row {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        
+        .control-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .control-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            min-width: 140px;
+        }
+        
+        .control-input {
+            flex: 1;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            padding: 8px 12px;
+            color: var(--text-primary);
+            font-size: 13px;
+            transition: all 0.2s ease;
+        }
+        
+        .control-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+            background: var(--black-7);
+        }
+        
+        .radio-group {
+            display: flex;
+            gap: 24px;
+        }
+        
+        .radio-option {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .radio-option input[type="radio"] {
+            width: 16px;
+            height: 16px;
+            accent-color: var(--accent-primary);
+        }
+        
+        .radio-option label {
+            font-size: 13px;
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        
+        .roi-table {
+            background: var(--panel-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        
+        .table-header {
+            background: var(--secondary-dark);
+            padding: 12px 20px;
+            border-bottom: 1px solid var(--panel-border);
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+        }
+        
+        .table-content {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th {
+            background: var(--secondary-dark);
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-dim);
+            border-bottom: 1px solid var(--panel-border);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        td {
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--panel-border);
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+        
+        tr:hover td {
+            background: var(--hover-bg);
+        }
+        
+        .checkbox-cell {
+            text-align: center;
+        }
+        
+        .custom-checkbox {
+            width: 18px;
+            height: 18px;
+            accent-color: var(--accent-primary);
+            cursor: pointer;
+        }
+        
+        .preset-select {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: var(--text-primary);
+            font-size: 12px;
+            min-width: 140px;
+            cursor: pointer;
+        }
+        
+        .manual-input {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            padding: 6px 8px;
+            color: var(--text-primary);
+            font-size: 12px;
+            width: 80px;
+        }
+        
+        .manual-input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .remove-btn {
+            background: transparent;
+            border: 1px solid var(--error);
+            color: var(--error);
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .remove-btn:hover {
+            background: var(--error);
+            color: white;
+        }
+        
+        .action-bar {
+            background: var(--panel-bg);
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .burn-button {
+            background: var(--accent-primary);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 14px 32px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 161, 156, 0.3);
+        }
+        
+        .burn-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 161, 156, 0.4);
+        }
+        
+        .progress-container {
+            flex: 1;
+            margin-left: 32px;
+        }
+        
+        .progress-bar {
+            background: var(--input-bg);
+            height: 6px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: var(--accent-primary);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .progress-text {
+            font-size: 11px;
+            color: var(--text-dim);
+            margin-top: 8px;
+        }
+        
+        .status-message {
+            position: fixed;
+            top: 76px;
+            right: 24px;
+            padding: 12px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: none;
+            animation: slideIn 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+        }
+        
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .status-message.success {
+            background: var(--success);
+            color: white;
+            display: block;
+        }
+        
+        .status-message.error {
+            background: var(--error);
+            color: white;
+            display: block;
+        }
+        
+        .status-message.info {
+            background: var(--accent-primary);
+            color: white;
+            display: block;
+        }
+
+        /* Version badge bottom-right */
+        .version-badge {
+            position: fixed;
+            right: 16px;
+            bottom: 12px;
+            background: rgba(0, 0, 0, 0.6);
+            color: var(--text-secondary);
+            padding: 6px 10px;
+            border: 1px solid var(--panel-border);
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 1001;
+            pointer-events: none;
+        }
+        
+        #canvasContainer {
+            display: none;
+        }
+        
+        /* Viewport Grid Styles */
+        .viewport-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 2px;
+            height: 100%;
+            background: var(--panel-border);
+            padding: 2px;
+        }
+        
+        .viewport-container {
+            background: black;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .viewport-canvas {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+            object-fit: contain;
+            cursor: grab;
+        }
+        
+        .viewport-canvas:active {
+            cursor: grabbing;
+        }
+        
+        .viewport-label {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: var(--accent-primary);
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .viewport-info {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: rgba(0, 0, 0, 0.7);
+            color: var(--text-secondary);
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            text-align: right;
+            pointer-events: none;
+            z-index: 10;
+            line-height: 1.4;
+        }
+        
+        /* Burn-in Controls in 4th viewport */
+        .burn-controls {
+            width: 100%;
+            height: 100%;
+            padding: 20px;
+            overflow-y: auto;
+            background: var(--panel-bg);
+        }
+        
+        .burn-controls .control-panel {
+            background: transparent;
+            padding: 0;
+            /* Add top offset so the floating viewport label doesn't overlap the first row */
+            margin: 28px 0 0 0;
+            border-radius: 0;
+        }
+        
+        .burn-controls .control-row {
+            margin-bottom: 12px;
+        }
+        
+        .burn-controls .control-label {
+            font-size: 11px;
+            min-width: 80px;
+        }
+        
+        .burn-controls .control-input {
+            font-size: 11px;
+            padding: 6px 10px;
+        }
+        
+        .roi-config-list {
+            margin: 16px 0;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            padding: 8px;
+        }
+        
+        .roi-config-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+        
+        .roi-config-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .burn-controls .button-row {
+            display: flex;
+            gap: 8px;
+            margin-top: 16px;
+        }
+        
+        .burn-controls .preview-button,
+        .burn-controls .burn-button {
+            flex: 1;
+            padding: 10px 16px;
+            font-size: 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .burn-controls .preview-button {
+            background: var(--black-50);
+            color: var(--text-primary);
+        }
+        
+        .burn-controls .preview-button:hover {
+            background: var(--black-25);
+        }
+        
+        .burn-controls .burn-button {
+            background: var(--accent-primary);
+            color: white;
+        }
+        
+        .burn-controls .burn-button:hover {
+            background: var(--accent-hover);
+        }
+        
+        .width-slider {
+            flex: 1;
+            margin: 0 8px;
+        }
+        
+        #widthValue {
+            min-width: 30px;
+            text-align: right;
+            color: var(--text-secondary);
+        }
+        
+        .burn-controls .progress-bar {
+            margin-top: 12px;
+        }
+        
+        .burn-controls .progress-text {
+            font-size: 10px;
+            margin-top: 6px;
+        }
+        
+        /* ROI Visibility Controls in Sidebar */
+        .roi-visibility-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .roi-visibility-item {
+            display: grid;
+            grid-template-columns: 1fr 60px;
+            gap: 8px;
+            align-items: center;
+            padding: 8px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            border-radius: 4px;
+            margin-bottom: 6px;
+            transition: all 0.2s ease;
+            font-size: 11px;
+        }
+        
+        .roi-visibility-item:hover {
+            background: var(--hover-bg);
+        }
+        .roi-visibility-item.selected {
+            background: var(--black-10);
+            border-color: var(--accent-primary);
+        }
+        
+        .roi-select-check {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+        
+        .roi-hu-input {
+            width: 100%;
+            padding: 4px;
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--text-primary);
+            border-radius: 3px;
+            font-size: 11px;
+            text-align: center;
+        }
+        
+        .roi-vis-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        }
+        
+        .roi-vis-toggle input {
+            display: none;
+        }
+        
+        .eye-icon {
+            font-size: 16px;
+            opacity: 0.5;
+            transition: opacity 0.2s;
+        }
+        
+        .roi-vis-toggle input:checked + .eye-icon {
+            opacity: 1;
+        }
+        
+        .roi-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .roi-color {
+            width: 14px;
+            height: 14px;
+            border-radius: 3px;
+            border: 1px solid var(--input-border);
+        }
+        
+        .roi-name {
+            font-size: 11px;
+            color: var(--text-primary);
+        }
+        
+        .roi-toggle {
+            position: relative;
+            width: 32px;
+            height: 18px;
+        }
+        
+        .roi-toggle input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .roi-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--input-border);
+            transition: 0.3s;
+            border-radius: 18px;
+        }
+        
+        .roi-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 12px;
+            width: 12px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.3s;
+            border-radius: 50%;
+        }
+        
+        .roi-toggle input:checked + .roi-toggle-slider {
+            background: var(--accent-primary);
+        }
+        
+        .roi-toggle input:checked + .roi-toggle-slider:before {
+            transform: translateX(14px);
+        }
+        
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--input-bg);
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--input-border);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-primary);
+        }
+        /* Help modal overlay */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: none; align-items: center; justify-content: center; z-index: 2000; }
+        .modal-content { width: min(920px, 92vw); max-height: 86vh; background: #1a1a1a; border: 1px solid var(--panel-border); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+        .modal-header { padding: 14px 18px; background: var(--secondary-dark); border-bottom: 1px solid var(--panel-border); display: flex; align-items: center; justify-content: space-between; }
+        .modal-title { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+        .modal-close { background: transparent; color: var(--text-secondary); border: 0; font-size: 18px; cursor: pointer; }
+        .modal-body { padding: 18px; overflow: auto; }
+        .modal-body h3 { color: var(--accent-primary); font-size: 14px; margin: 14px 0 8px; }
+        .modal-body p, .modal-body li, .modal-body ol { color: var(--text-secondary); font-size: 13px; line-height: 1.5; }
+        .muted { color: var(--text-dim); font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="header">
+            <div class="header-content">
+                <div class="logo-section">
+                    <div class="logo">ROI</div>
+                    <div class="app-title">ROI Override Tool</div>
+                </div>
+                <div class="header-status">
+                    <div class="patient-info-bar">
+                        <div class="patient-info-item">
+                            <span class="patient-info-label">MRN:</span>
+                            <span id="headerPatientId">—</span>
+                        </div>
+                        <div class="patient-info-item">
+                            <span class="patient-info-label">Patient:</span>
+                            <span id="headerPatientName">—</span>
+                        </div>
+                        <div class="patient-info-item">
+                            <span class="patient-info-label">Study:</span>
+                            <span id="headerStudyDate">—</span>
+                        </div>
+                        <div class="patient-info-item">
+                            <span id="filesLoadedHeader">No files loaded</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-layout">
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <div class="section-header">DICOM Import</div>
+                    <div class="file-upload-area">
+                        <input type="file" id="dicomFiles" multiple accept=".dcm" webkitdirectory directory>
+                        <div class="upload-icon">📁</div>
+                        <div class="upload-text">Drop DICOM folder here</div>
+                        <div class="upload-hint">or click to browse</div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-header">View Controls</div>
+                    <div class="view-controls">
+                        <div class="control-row">
+                            <label>Window:</label>
+                            <input type="number" id="windowWidth" value="400" onchange="updateWindowLevel()">
+                        </div>
+                        <div class="control-row">
+                            <label>Level:</label>
+                            <input type="number" id="windowLevel" value="40" onchange="updateWindowLevel()">
+                        </div>
+                        <div class="control-row">
+                            <label>Slice:</label>
+                            <input type="range" id="sliceSlider" min="0" max="100" value="50" oninput="navigateToSlice(this.value)">
+                            <span id="sliceInfo">50/100</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="sidebar-section">
+                    <div class="section-header">
+                        RT Structure
+                        <button class="toggle-all-btn" onclick="toggleAllStructures()">Show/Hide All</button>
+                    </div>
+                    <div class="roi-visibility-list" id="roiVisibilityList">
+                        <!-- ROI visibility toggles will be added here dynamically -->
+                    </div>
+                </div>
+                <div class="sidebar-section">
+                    <div class="section-header">Help</div>
+                    <button class="add-roi-button" onclick="openHelpModal()">Help / About</button>
+                </div>
+            </div>
+            
+            <div class="content-area">
+                <div class="viewport-grid">
+                    <div class="viewport-container">
+                        <div class="viewport-label">Axial</div>
+                        <div class="viewport-info" id="info-axial">
+                            <span>Slice: <span id="axial-slice">0/0</span></span><br>
+                            <span>WL: <span id="axial-wl">400/40</span></span>
+                        </div>
+                        <canvas id="viewport-axial" class="viewport-canvas"></canvas>
+                    </div>
+                    
+                    <div class="viewport-container">
+                        <div class="viewport-label">Sagittal</div>
+                        <div class="viewport-info" id="info-sagittal">
+                            <span>Slice: <span id="sagittal-slice">0/0</span></span><br>
+                            <span>WL: <span id="sagittal-wl">400/40</span></span>
+                        </div>
+                        <canvas id="viewport-sagittal" class="viewport-canvas"></canvas>
+                    </div>
+                    
+                    <div class="viewport-container">
+                        <div class="viewport-label">Coronal</div>
+                        <div class="viewport-info" id="info-coronal">
+                            <span>Slice: <span id="coronal-slice">0/0</span></span><br>
+                            <span>WL: <span id="coronal-wl">400/40</span></span>
+                        </div>
+                        <canvas id="viewport-coronal" class="viewport-canvas"></canvas>
+                    </div>
+                    
+                    <div class="viewport-container">
+                        <div class="viewport-label">Burn-In Controls</div>
+                        <div class="burn-controls">
+                            <div class="control-panel">
+                                <div class="control-row">
+                                    <label class="control-label">ImageSet Name:</label>
+                                    <input type="text" class="control-input" id="imageSetName" placeholder="Default Name CT_MMDDYY_Burn">
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label class="control-label">Line Width:</label>
+                                    <input type="range" id="lineWidth" min="1" max="5" value="1" class="width-slider" oninput="document.getElementById('widthValue').textContent = this.value + 'px'">
+                                    <span id="widthValue">1px</span>
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label class="control-label">Line Style:</label>
+                                    <div class="radio-group">
+                                        <div class="radio-option">
+                                            <input type="radio" id="styleSolid" name="lineStyle" value="solid">
+                                            <label for="styleSolid">Solid</label>
+                                        </div>
+                                        <div class="radio-option">
+                                            <input type="radio" id="styleDotted" name="lineStyle" value="dotted" checked>
+                                            <label for="styleDotted">Dotted</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label class="control-label">Default HU:</label>
+                                    <input type="number" id="defaultHU" value="1000" min="-1000" max="3000" class="control-input">
+                                </div>
+                                
+                                <div class="control-row">
+                                    <label class="control-label">Export Mode:</label>
+                                    <div class="radio-group">
+                                        <div class="radio-option">
+                                            <input type="radio" id="exportCombined" name="exportMode" value="combined">
+                                            <label for="exportCombined">All ROIs on the Same CT</label>
+                                        </div>
+                                        <div class="radio-option">
+                                            <input type="radio" id="exportSeparate" name="exportMode" value="separate" checked>
+                                            <label for="exportSeparate">Each ROI on a Separate CT</label>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="button-row">
+                                    <button class="burn-button" onclick="burnInROIs()">Burn & Export</button>
+                                </div>
+                                
+                                <div class="progress-bar">
+                                    <div class="progress-fill" id="progressFill"></div>
+                                </div>
+                                <div class="progress-text" id="progressText"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-message" id="statusMessage"></div>
+    
+    <canvas id="canvasContainer"></canvas>
+
+    <div class="version-badge" id="versionBadge">vDEV</div>
+
+    <script>
+        // Initialize version/build badge from query params if provided by Electron
+        (function() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const ver = params.get('version');
+                const build = params.get('build');
+                const badge = document.getElementById('versionBadge');
+                if (badge) {
+                    if (ver && build) badge.textContent = `v${ver} (build ${build})`;
+                    else if (ver) badge.textContent = `v${ver}`;
+                    else if (build) badge.textContent = `build ${build}`;
+                }
+            } catch (e) {}
+        })();
+    </script>
+    
+    
+    <link rel="stylesheet" href="viewer.css">
+    
+    <!-- DICOM Parser -->
+    <script src="js/dicomParser.js"></script>
+
+    <!-- Remove BlueLight dependencies; use internal RTSTRUCT parser instead -->
+    <!-- dcmjs for DICOM writing (use single source to avoid conflicts) -->
+    <script src="js/dcmjs.js" crossorigin="anonymous"></script>
+    <script>
+      // Quiet dcmjs OX VR warning by mapping OX -> OW before creation.
+      (function patchDcmjsVR(){
+        try {
+          if (window.dcmjs && dcmjs.data && dcmjs.data.ValueRepresentation) {
+            const VR = dcmjs.data.ValueRepresentation;
+            const orig = VR.createByTypeString.bind(VR);
+            VR.createByTypeString = function(type) {
+              const t = String(type || '').toUpperCase();
+              if (t === 'OX') {
+                // Treat OX as OW without emitting the internal warning
+                return orig('OW');
+              }
+              return orig(type);
+            };
+          }
+        } catch (e) { /* non-fatal */ }
+      })();
+    </script>
+    
+    <!-- JSZip for export (local copy) -->
+    <script src="js/jszip.min.js"></script>
+
+    <!-- Removed duplicate local dcmjs include to prevent class extension errors -->
+
+    <!-- Application Scripts -->
+    <script src="roi_override.js"></script>
+
+    <!-- Help / About Modal -->
+    <div class="modal-overlay" id="helpModal">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div class="modal-title">ROI Override Tool — Help & About</div>
+          <button class="modal-close" title="Close" onclick="closeHelpModal()">×</button>
+        </div>
+        <div class="modal-body">
+          <h3>Purpose</h3>
+          <p>Burn ROI contours from DICOM RTSTRUCT into CT image pixels to create derived “annotation baked-in” DICOM series for review or system ingestion. Not for primary diagnosis.</p>
+
+          <h3>Quick Start</h3>
+          <ol>
+            <li>Import a folder of CT DICOMs (and RTSTRUCTs if present).</li>
+            <li>Select the CT series when prompted.</li>
+            <li>Use RT Structure panel to show/hide and select ROIs for burn-in.</li>
+            <li>Configure Burn-In Controls: Series Name, Line Width/Style, Default HU.</li>
+            <li>Toggle ROIs to preview outlines live; then Burn & Export.</li>
+          </ol>
+
+          <h3>Viewer Tips</h3>
+          <ul>
+            <li>Pan: drag with left mouse</li>
+            <li>Window/Level: right-drag horizontally/vertically</li>
+            <li>Slice: mouse wheel or Slice slider</li>
+            <li>Center crosshair: click inside a viewport</li>
+            <li>Jump to ROI: double-click its name</li>
+          </ul>
+
+          <h3>Open Source Licenses</h3>
+          <ul>
+            <li>dcmjs — MIT — https://github.com/dcmjs-org/dcmjs</li>
+            <li>dicomParser — MIT — https://github.com/cornerstonejs/dicomParser</li>
+            <li>JSZip — MIT — https://github.com/Stuk/jszip</li>
+            <li>Electron — MIT — https://www.electronjs.org/</li>
+            <li>electron-builder — MIT — https://github.com/electron-userland/electron-builder</li>
+          </ul>
+          <details>
+            <summary>MIT License Text</summary>
+<pre>
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+</pre>
+          </details>
+          <p class="muted">Press F1 to open the full About window.</p>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      function openHelpModal(){ const m = document.getElementById('helpModal'); if (m) m.style.display = 'flex'; }
+      function closeHelpModal(){ const m = document.getElementById('helpModal'); if (m) m.style.display = 'none'; }
+      window.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeHelpModal(); });
+      document.addEventListener('click', (e)=>{ const o=document.getElementById('helpModal'); if(o && e.target===o) closeHelpModal();});
+    </script>
+</body>
+</html>
