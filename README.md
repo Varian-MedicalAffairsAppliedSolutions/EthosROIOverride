@@ -73,7 +73,8 @@ For users in environments with software installation restrictions, please contac
 - Click “Import DICOM Files” and select your CT/RTSTRUCT folder contents.
 - If multiple CT series are detected, choose the target series when prompted.
 - Use the RT Structure panel to show/hide ROIs and toggle “Include in burn‑in”.
-  - Single‑click ROI name = show/hide; double‑click = navigate to ROI.
+  - Single‑click ROI name = show/hide; 
+  - Double-click ROI name = navigate view planes to ROI.
 - Configure Burn‑In Controls:
   - Series Name
   - Line Width and Style (Solid/Dotted)
