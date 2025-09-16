@@ -7,7 +7,7 @@ Important: Not for primary diagnosis. Verify results before clinical use.
 
 ## UI Overview
 
-![ROI Override Tool UI](https://raw.githubusercontent.com/Varian-MedicalAffairsAppliedSolutions/EthosROIOverride/main/docs/UI-Overview.png)
+![ROI Override Tool UI](https://github.com/Varian-MedicalAffairsAppliedSolutions/EthosROIOverride/blob/main/docs/UI-Overview.png?raw=1)
 
 ## Features
 
