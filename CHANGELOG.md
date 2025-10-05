@@ -4,6 +4,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.0.4 — 2025-10-05
+
+- Integrated external core burn pipeline into the browser app:
+  - Unified `burnSlices` with exact pixel stamping (even/odd‑aware 1×1 and 2×2 kernels).
+  - Fixed dotted contour sampling to a consistent step of 6.
+- Preview fidelity improvements:
+  - Preview now generates an in‑memory burned series that exactly matches export (no overlay text/lines added).
+  - Suppressed ROI overlays in sagittal/coronal during real preview so only burned pixels are shown.
+  - Slice slider/labels now reflect the active series (preview > processed > original).
+- Burned footer enhancements:
+  - Two lines are always burned: “<ROI>, <Solid|Dotted>[, ±HU overlay]” and “NOT FOR DOSE CALCULATION”.
+  - Optional 3‑line user note burned above the ROI line; adaptive wrapping to full image width; automatic ellipsis.
+  - Footer font reduced ~2 points for readability (15 px), stamped at 1000 HU.
+- Defaults & UI polish:
+  - Default line width: Solid = 1 px; Dotted = 2 px.
+  - Text inputs/textarea focus styling improved for dark theme readability.
+- Robustness & fixes:
+  - Resolved “Cannot access 'ctx' before initialization” during preview footer generation.
+  - Removed preview overlay footer (previously caused duplicate footers).
+  - dcmjs include adjusted to reduce file:// CORS issues; recommend serving via a local HTTP server if needed.
+
 ## 1.0.3 — 2025-09-16
 
 - Replaced gate with PlanDeliverySimulator-style flow; added offline QR and JotForm iframe embed.

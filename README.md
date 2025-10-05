@@ -79,16 +79,17 @@ For users in environments with software installation restrictions, please contac
   - Series Name
   - Line Width and Style (Solid/Dotted)
   - Default HU (used if ROI has no per‑ROI HU set)
+- Optional: enable Overlay Fill or click “Preview On” to generate an in-memory burn before exporting.
 - Export Mode:
   - Single ImageSet (combines selected ROIs) or Separate ImageSets (one per ROI)
 - Click “Burn & Export”. A ZIP will be downloaded with the modified DICOMs.
 
-## Live Preview Behavior
+## Preview Options
 
-- Toggling “Include in burn‑in” on an ROI immediately previews its outline in white.
-- Preview thickness matches image pixels (axial in image space; sagittal/coronal scaled to maintain pixel‑accurate visual thickness).
-- Changing Line Width or Style updates the preview live.
-- Toggling an ROI off returns its overlay to the original color.
+- Clicking “Preview On” builds an in‑memory burned series that exactly matches export: contours, optional fill, the footer note (up to 3 wrapped lines), the ROI line, and the “NOT FOR DOSE CALCULATION” warning are all stamped into pixels. No additional overlays are drawn while preview is on.
+- Click “Preview Off” to return to original pixels.
+- Overlay Fill applies a configurable HU delta to voxels inside the ROI during preview and export.
+- Line Width and Style changes regenerate the preview automatically.
 
 ## Export Details
 
@@ -128,10 +129,12 @@ Algorithmic notes (Python):
 
 - RTSTRUCT parsing: reads StructureSetROISequence and ROIContourSequence; associates contours to CT slices using ReferencedSOPInstanceUID.
 - Rendering:
-  - Axial overlay drawn in image pixel space; preview uses white outline.
-  - Sagittal/Coronal use 3D mask + marching squares; line width/dashes scaled so on‑screen thickness reflects image pixels.
+  - Axial overlay drawn in image pixel space. During Preview, axial displays burned preview pixels; sagittal/coronal suppress overlays so only burned pixels are shown.
+  - Sagittal/Coronal use MPR with line width/dashes scaled when overlays are enabled (not during real preview).
 - Burn‑in (JS path):
-  - Contour stamping only (per ROI), respecting Solid/Dotted style with sampled points.
+  - Contour stamping per ROI, respecting Solid/Dotted style with densified points. Defaults: Solid = 1 px, Dotted = 2 px. Dotted sampling step fixed at 6.
+  - Optional fill applies HU deltas relative to baseline pixels before contours are stamped.
+  - Footer annotation (burned) at lower-left: optional 3‑line note (wrapped full width), then “<ROI>, <Solid|Dotted>[, ±HU overlay]”, and “NOT FOR DOSE CALCULATION”.
   - HU conversion via RescaleSlope/Intercept; reverted to native pixel type after burn.
 - DICOM writing (JS path):
   - In‑place byte updates: Pixel Data, UIDs (Study/Series/SOP), SeriesDescription, optional BurnedInAnnotation and DerivationDescription if elements exist.
@@ -162,9 +165,15 @@ Scripts:
 - `npm run build` — build Windows portable binary.
 
 Coding notes:
-- Preview outlines are white and reflect the selected style and width.
+- Preview displays exactly the burned pixels that will be exported—no overlay annotations are added while preview is on.
 - Separate ImageSets mode exports one series per ROI as in the Python app.
 - ZIP filenames include burned ROI names.
+
+### Running locally without CORS issues
+- Browsers may block `file://` script loads. Serve via a local server:
+  - Python: `python3 -m http.server 8000`
+  - Node: `npx http-server .`
+  - Open: `http://localhost:8000/roi_override.html`
 
 ## Support and Development
 

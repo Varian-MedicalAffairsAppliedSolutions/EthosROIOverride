@@ -55,7 +55,9 @@
             --error: #ec6602;
             --warning: #ec6602;
             --input-bg: #000000;
+            --input-bg-focus: #0f0f0f; /* darker focus state to keep white text readable */
             --input-border: #808080;
+            --input-border-focus: var(--accent-primary);
             --hover-bg: #404040;
         }
         
@@ -381,8 +383,31 @@
         
         .control-input:focus {
             outline: none;
-            border-color: var(--accent-primary);
-            background: var(--black-7);
+            border-color: var(--input-border-focus);
+            background: var(--input-bg-focus);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 2px rgba(0,153,153,0.18) inset;
+        }
+
+        /* Improve focus states for other inputs that don't use control-input class */
+        .manual-input:focus,
+        .roi-hu-input:focus,
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        textarea:focus {
+            outline: none;
+            border-color: var(--input-border-focus);
+            background: var(--input-bg-focus);
+            color: var(--text-primary);
+            box-shadow: 0 0 0 2px rgba(0,153,153,0.18) inset;
+        }
+
+        /* Placeholder should remain dim on dark backgrounds */
+        .control-input::placeholder,
+        .manual-input::placeholder,
+        textarea::placeholder,
+        input::placeholder {
+            color: var(--text-dim);
         }
         
         .radio-group {
@@ -608,6 +633,23 @@
             background: var(--accent-primary);
             color: white;
             display: block;
+        }
+
+        .preview-banner {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            background: rgba(236, 102, 2, 0.88);
+            color: #ffffff;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            display: none;
+            z-index: 1200;
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
         }
 
         /* Version badge bottom-right */
@@ -1087,11 +1129,11 @@
                                     <label class="control-label">Line Style:</label>
                                     <div class="radio-group">
                                         <div class="radio-option">
-                                            <input type="radio" id="styleSolid" name="lineStyle" value="solid">
+                                            <input type="radio" id="styleSolid" name="lineStyle" value="solid" checked>
                                             <label for="styleSolid">Solid</label>
                                         </div>
                                         <div class="radio-option">
-                                            <input type="radio" id="styleDotted" name="lineStyle" value="dotted" checked>
+                                            <input type="radio" id="styleDotted" name="lineStyle" value="dotted">
                                             <label for="styleDotted">Dotted</label>
                                         </div>
                                     </div>
@@ -1101,7 +1143,26 @@
                                     <label class="control-label">Default HU:</label>
                                     <input type="number" id="defaultHU" value="1000" min="-1000" max="3000" class="control-input">
                                 </div>
-                                
+
+                                <div class="control-row">
+                                    <label class="control-label">Footer Note:</label>
+                                    <textarea id="footerNote" class="control-input" rows="3" style="height:auto; resize: vertical;" placeholder="Optional instructions (up to 3 lines, burned above ROI line)"></textarea>
+                                </div>
+
+                                <div class="control-row">
+                                    <label class="control-label">Overlay Fill:</label>
+                                    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                                        <label style="display:flex;align-items:center;gap:6px;">
+                                            <input type="checkbox" id="enableFill">
+                                            <span>Enable</span>
+                                        </label>
+                                        <label style="display:flex;align-items:center;gap:6px;">
+                                            <input type="number" id="fillPercent" value="-100" step="25" min="-1000" max="1000" style="width:72px;" title="HU delta applied inside ROI during preview">
+                                            <span>HU delta</span>
+                                        </label>
+                                    </div>
+                                </div>
+
                                 <div class="control-row">
                                     <label class="control-label">Export Mode:</label>
                                     <div class="radio-group">
@@ -1116,6 +1177,7 @@
                                     </div>
                                 </div>
                                 <div class="button-row">
+                                    <button class="preview-button" id="previewToggle" onclick="previewBurnIn()">Preview On</button>
                                     <button class="burn-button" onclick="burnInROIs()">Burn & Export</button>
                                 </div>
                                 
@@ -1135,6 +1197,8 @@
     <div class="status-message" id="statusMessage"></div>
     
     <canvas id="canvasContainer"></canvas>
+
+    <div class="preview-banner" id="previewBanner">Preview Mode</div>
 
     <div class="version-badge" id="versionBadge">vDEV</div>
 
@@ -1163,7 +1227,7 @@
 
     <!-- Remove BlueLight dependencies; use internal RTSTRUCT parser instead -->
     <!-- dcmjs for DICOM writing (use single source to avoid conflicts) -->
-    <script src="js/dcmjs.js" crossorigin="anonymous"></script>
+    <script src="js/dcmjs.js"></script>
     <script>
       // Quiet dcmjs OX VR warning by mapping OX -> OW before creation.
       (function patchDcmjsVR(){
@@ -1209,8 +1273,10 @@
             <li>Import a folder of CT DICOMs (and RTSTRUCTs if present).</li>
             <li>Select the CT series when prompted.</li>
             <li>Use RT Structure panel to show/hide and select ROIs for burn-in.</li>
-            <li>Configure Burn-In Controls: Series Name, Line Width/Style, Default HU.</li>
-            <li>Toggle ROIs to preview outlines live; then Burn & Export.</li>
+            <li>Configure Burn-In Controls: Series Name, Line Width/Style (Solid=1px, Dotted=2px), Default HU, Optional Overlay Fill.</li>
+            <li>(Optional) Add a Footer Note (up to 3 lines). It will be burned above the ROI line at the lower-left.</li>
+            <li>(Optional) Enable Overlay Fill or click <strong>Preview On</strong> to generate an in-memory burn before exporting.</li>
+            <li>Click Burn & Export when satisfied with the preview.</li>
           </ol>
 
           <h3>Viewer Tips</h3>
@@ -1220,7 +1286,11 @@
             <li>Slice: mouse wheel or Slice slider</li>
             <li>Center crosshair: click inside a viewport</li>
             <li>Jump to ROI: double-click its name</li>
+            <li>Preview Mode displays the in-memory burned pixels exactly as they will export; click Preview Off to return to original CT data.</li>
           </ul>
+
+          <h3>Footer Notes</h3>
+          <p>The Footer Note supports up to 3 lines and wraps across the full image width. During preview and export, the note is burned above a line summarizing each ROI and its style/HU overlay, followed by “NOT FOR DOSE CALCULATION”.</p>
 
           <h3>Dependencies and Licenses</h3>
           <ul>
