@@ -162,7 +162,15 @@ Project layout:
 
 Scripts:
 - `npm run dev` — start Electron app.
-- `npm run build` — build Windows portable binary.
+- `npm run build:win` — build Windows portable (electron‑builder portable).
+- `npm run build:mac` — build macOS dmg (unsigned by default).
+- `npm run build:linux` — build Linux AppImage.
+- `npm run build` — alias to `build:win`.
+- `npm run pack` — create unpacked directories for inspection.
+
+Build notes:
+- Code signing is disabled by default (`CSC_IDENTITY_AUTO_DISCOVERY=false`). If you have certificates configured, remove that env var.
+- When running from `file://`, browsers may block local scripts. For development, prefer the Electron app or serve via a local HTTP server.
 
 Coding notes:
 - Preview displays exactly the burned pixels that will be exported—no overlay annotations are added while preview is on.
