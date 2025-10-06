@@ -4,6 +4,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.0 — 2025-10-06
+
+- Version bump to 1.1.0.
+
 ## 1.0.4 — 2025-10-05
 
 - Integrated external core burn pipeline into the browser app:

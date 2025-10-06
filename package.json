@@ -1,6 +1,6 @@
 {
     "name": "roi-override-electron",
-    "version": "1.0.4",
+    "version": "1.1.0",
     "buildNumber": 1,
     "description": "ROI Override Tool packaged as an Electron desktop app",
     "main": "main.js",
