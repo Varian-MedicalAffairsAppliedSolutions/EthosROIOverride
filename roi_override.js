@@ -151,7 +151,8 @@ function parseHuDelta(raw, fallback) {
 function getFooterNoteText() {
     const el = document.getElementById('footerNote');
     if (!el) return '';
-    return String(el.value || '').trim();
+    const lines = String(el.value || '').split(/\r?\n/).slice(0, 5);
+    return lines.join('\n').trim();
 }
 
 // Build default series name like CT_MMDDYY_Burn
@@ -643,6 +644,223 @@ function updateBurnInList() {
             countLabel.textContent = `Selected ROIs: ${selectedROIs.length}`;
         }
     }
+
+    // Populate per-ROI override list for selected structures
+    const overridesRow = document.getElementById('perRoiOverridesRow');
+    const listContainer = document.getElementById('roiConfigList');
+    if (overridesRow && listContainer) {
+        const hasOverrides = selectedROIs.length > 0;
+        overridesRow.style.display = hasOverrides ? 'flex' : 'none';
+        listContainer.innerHTML = '';
+
+        if (hasOverrides) {
+            const globalFill = parseHuDelta(document.getElementById('fillPercent')?.value ?? -100, -100);
+            const globalWidth = parseFloat(document.getElementById('lineWidth')?.value || '2');
+            const fillEnabled = !!document.getElementById('enableFill')?.checked;
+
+            selectedROIs.forEach(roi => {
+                if (typeof roi.lineStyleOverride === 'undefined') roi.lineStyleOverride = 'global';
+                if (typeof roi.fillDeltaOverride === 'undefined' || roi.fillDeltaOverride === '') roi.fillDeltaOverride = null;
+                if (typeof roi.lineWidthOverride === 'undefined' || roi.lineWidthOverride === '') roi.lineWidthOverride = null;
+
+                const item = document.createElement('div');
+                item.className = 'roi-config-item';
+
+                const left = document.createElement('div');
+                left.style.display = 'flex';
+                left.style.alignItems = 'center';
+                left.style.gap = '8px';
+                const colorBox = document.createElement('div');
+                colorBox.className = 'roi-color';
+                colorBox.style.backgroundColor = roi.color || '#888';
+                const nameSpan = document.createElement('div');
+                nameSpan.className = 'roi-name';
+                nameSpan.textContent = roi.name;
+                left.appendChild(colorBox);
+                left.appendChild(nameSpan);
+
+                const right = document.createElement('div');
+                right.style.display = 'flex';
+                right.style.flexWrap = 'wrap';
+                right.style.gap = '8px';
+                right.style.alignItems = 'center';
+
+                const styleSel = document.createElement('select');
+                styleSel.className = 'preset-select';
+                styleSel.title = 'Outline style';
+                [{ label: 'Global', value: 'global' }, { label: 'Solid', value: 'solid' }, { label: 'Dotted', value: 'dotted' }]
+                    .forEach(opt => {
+                        const o = document.createElement('option');
+                        o.value = opt.value;
+                        o.textContent = opt.label;
+                        styleSel.appendChild(o);
+                    });
+                styleSel.value = roi.lineStyleOverride || 'global';
+                styleSel.addEventListener('change', () => {
+                    roi.lineStyleOverride = styleSel.value;
+                    refreshPreviewIfActive();
+                });
+
+                const widthInput = document.createElement('input');
+                widthInput.type = 'number';
+                widthInput.className = 'manual-input';
+                widthInput.style.width = '68px';
+                widthInput.step = '0.5';
+                widthInput.min = '0.5';
+                widthInput.max = '10';
+                widthInput.placeholder = 'Line px';
+                widthInput.title = 'Per-ROI contour line width (pixels)';
+                const resolveWidthValue = () => {
+                    const parsed = parseFloat(roi.lineWidthOverride);
+                    return Number.isFinite(parsed) && parsed > 0 ? parsed : globalWidth;
+                };
+                widthInput.value = String(resolveWidthValue());
+                const commitWidthValue = () => {
+                    const raw = widthInput.value.trim();
+                    if (!raw) {
+                        roi.lineWidthOverride = null;
+                        widthInput.value = String(globalWidth);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    let parsed = parseFloat(raw);
+                    if (!Number.isFinite(parsed)) {
+                        roi.lineWidthOverride = null;
+                        widthInput.value = String(globalWidth);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    parsed = Math.max(0.5, Math.min(10, parsed));
+                    parsed = Math.round(parsed * 2) / 2; // snap to 0.5 px increments
+                    roi.lineWidthOverride = parsed;
+                    widthInput.value = parsed.toString();
+                    refreshPreviewIfActive();
+                };
+                widthInput.addEventListener('blur', commitWidthValue);
+                widthInput.addEventListener('change', commitWidthValue);
+                widthInput.addEventListener('keydown', evt => {
+                    if (evt.key === 'Enter') {
+                        evt.preventDefault();
+                        commitWidthValue();
+                    }
+                });
+
+                const fillInput = document.createElement('input');
+                fillInput.type = 'number';
+                fillInput.className = 'manual-input';
+                fillInput.style.width = '72px';
+                fillInput.step = '50';
+                fillInput.min = '-1000';
+                fillInput.max = '1000';
+                fillInput.placeholder = 'ΔHU';
+                fillInput.title = 'Per-ROI fill ΔHU (50 HU increments)';
+                const resolveDisplayValue = () => {
+                    if (roi.fillDeltaOverride === null || roi.fillDeltaOverride === undefined) return globalFill;
+                    if (!Number.isFinite(roi.fillDeltaOverride)) return globalFill;
+                    return roi.fillDeltaOverride;
+                };
+                fillInput.value = String(resolveDisplayValue());
+
+                const minusBtn = document.createElement('button');
+                minusBtn.type = 'button';
+                minusBtn.textContent = '−';
+                minusBtn.title = 'Decrease fill ΔHU by 50';
+                const plusBtn = document.createElement('button');
+                plusBtn.type = 'button';
+                plusBtn.textContent = '+';
+                plusBtn.title = 'Increase fill ΔHU by 50';
+                [minusBtn, plusBtn].forEach(btn => {
+                    btn.style.padding = '0 6px';
+                    btn.style.height = '24px';
+                    btn.style.border = '1px solid var(--input-border)';
+                    btn.style.background = 'var(--input-bg)';
+                    btn.style.color = 'var(--text-primary)';
+                    btn.style.borderRadius = '3px';
+                    btn.style.cursor = 'pointer';
+                });
+
+                const normalizeDelta = (value) => {
+                    let parsed = parseFloat(value);
+                    if (!Number.isFinite(parsed)) return null;
+                    parsed = Math.round(parsed / 50) * 50;
+                    parsed = Math.max(-1000, Math.min(1000, parsed));
+                    return parsed;
+                };
+
+                const commitFillValue = () => {
+                    if (!fillEnabled) {
+                        fillInput.value = String(resolveDisplayValue());
+                        return;
+                    }
+                    const raw = fillInput.value.trim();
+                    if (!raw) {
+                        roi.fillDeltaOverride = null;
+                        fillInput.value = String(globalFill);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    const normalized = normalizeDelta(raw);
+                    if (normalized === null) {
+                        roi.fillDeltaOverride = null;
+                        fillInput.value = String(globalFill);
+                    } else {
+                        roi.fillDeltaOverride = normalized;
+                        fillInput.value = String(normalized);
+                    }
+                    refreshPreviewIfActive();
+                };
+
+                fillInput.addEventListener('blur', commitFillValue);
+                fillInput.addEventListener('change', commitFillValue);
+                fillInput.addEventListener('keydown', evt => {
+                    if (evt.key === 'Enter') {
+                        evt.preventDefault();
+                        commitFillValue();
+                    }
+                });
+
+                const adjustFill = (delta) => {
+                    if (!fillEnabled) return;
+                    let current = resolveDisplayValue();
+                    if (!Number.isFinite(current)) current = globalFill;
+                    current = normalizeDelta(current + delta);
+                    if (current === null) return;
+                    roi.fillDeltaOverride = current;
+                    fillInput.value = String(current);
+                    refreshPreviewIfActive();
+                };
+                minusBtn.addEventListener('click', () => adjustFill(-50));
+                plusBtn.addEventListener('click', () => adjustFill(50));
+
+                const deltaWrapper = document.createElement('div');
+                deltaWrapper.style.display = 'flex';
+                deltaWrapper.style.alignItems = 'center';
+                deltaWrapper.style.gap = '4px';
+                deltaWrapper.appendChild(minusBtn);
+                deltaWrapper.appendChild(fillInput);
+                deltaWrapper.appendChild(plusBtn);
+
+                const applyFillEnabledState = () => {
+                    const disabled = !fillEnabled;
+                    fillInput.disabled = disabled;
+                    minusBtn.disabled = disabled;
+                    plusBtn.disabled = disabled;
+                    if (disabled) {
+                        fillInput.value = String(resolveDisplayValue());
+                    }
+                };
+                applyFillEnabledState();
+
+                right.appendChild(styleSel);
+                right.appendChild(widthInput);
+                right.appendChild(deltaWrapper);
+
+                item.appendChild(left);
+                item.appendChild(right);
+                listContainer.appendChild(item);
+            });
+        }
+    }
 }
 
 // Preview burn-in without modifying data
@@ -825,18 +1043,44 @@ function collectBurnConfig(options = {}) {
     if (Array.isArray(roiData)) {
         roiData.forEach(roi => {
             if (!roi.selected) return;
-            const roiHU = roi.huValue !== undefined && roi.huValue !== null && roi.huValue !== ''
-                ? parseFloat(roi.huValue)
-                : resolvedDefaultHU;
+
+            const roiHU = (() => {
+                if (roi.huValue !== undefined && roi.huValue !== null && roi.huValue !== '') {
+                    const parsed = parseFloat(roi.huValue);
+                    if (Number.isFinite(parsed)) return parsed;
+                }
+                return resolvedDefaultHU;
+            })();
+
+            const perRoiLineStyle = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : lineStyle;
+
+            let perRoiFillDelta = fillDeltaHU;
+            if (fillEnabled) {
+                const override = parseHuDelta(roi.fillDeltaOverride, NaN);
+                if (Number.isFinite(override)) {
+                    perRoiFillDelta = override;
+                }
+            }
+
+            const perRoiLineWidth = (() => {
+                const override = parseFloat(roi.lineWidthOverride);
+                if (Number.isFinite(override) && override > 0) {
+                    return override;
+                }
+                return lineWidth;
+            })();
+
             burnInSettings.push({
                 name: roi.name,
                 number: roi.number,
                 contour: true,
                 fill: fillEnabled,
-                fillDeltaHU,
+                fillDeltaHU: perRoiFillDelta,
                 huValue: Number.isFinite(roiHU) ? roiHU : resolvedDefaultHU,
-                lineStyle,
-                lineWidth
+                lineStyle: perRoiLineStyle,
+                lineWidth: perRoiLineWidth
             });
             burnNames.push(roi.name);
         });
@@ -886,19 +1130,42 @@ function collectBurnConfig(options = {}) {
 
 window.addEventListener('load', () => {
     const fillToggle = document.getElementById('enableFill');
-    if (fillToggle) fillToggle.addEventListener('change', refreshPreviewIfActive);
+    if (fillToggle) fillToggle.addEventListener('change', () => {
+        updateBurnInList();
+        refreshPreviewIfActive();
+    });
     const fillPercent = document.getElementById('fillPercent');
     if (fillPercent) fillPercent.addEventListener('input', () => {
+        updateBurnInList();
         if (!window.previewMode) return;
         if (previewIsRealBurn) schedulePreviewRegeneration();
         else refreshPreviewIfActive();
+    });
+    const lineWidthInput = document.getElementById('lineWidth');
+    if (lineWidthInput) lineWidthInput.addEventListener('input', () => {
+        updateBurnInList();
+        refreshPreviewIfActive();
     });
     const footerNote = document.getElementById('footerNote');
-    if (footerNote) footerNote.addEventListener('input', () => {
-        if (!window.previewMode) return;
-        if (previewIsRealBurn) schedulePreviewRegeneration();
-        else refreshPreviewIfActive();
-    });
+    const footerCounter = document.getElementById('notesCharCount');
+    const enforceFooterLimits = () => {
+        if (!footerNote) return;
+        const lines = footerNote.value.split(/\r?\n/);
+        if (lines.length > 5) {
+            footerNote.value = lines.slice(0, 5).join('\n');
+        }
+        if (footerCounter) footerCounter.textContent = `${footerNote.value.length} chars`;
+    };
+    if (footerNote) {
+        footerNote.addEventListener('input', () => {
+            enforceFooterLimits();
+            if (!window.previewMode) return;
+            if (previewIsRealBurn) schedulePreviewRegeneration();
+            else refreshPreviewIfActive();
+        });
+        footerNote.addEventListener('blur', enforceFooterLimits);
+        setTimeout(enforceFooterLimits, 0);
+    }
 });
 
 function updateROIOverlay() {
@@ -928,17 +1195,24 @@ function drawROIOverlaySagittal(ctx, volume, sliceX, displayParams) {
         const segments = getOrBuildContoursSag(roi.name, sliceX, volume);
         if (!segments || segments.length === 0) return;
         if (previewSettings && roi.selected) {
-            const lw = previewSettings.lineWidth || 2;
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
             ctx.strokeStyle = '#ffff00';
-            ctx.lineWidth = lw * scalePx;
+            ctx.lineWidth = effectiveWidth * scalePx;
             ctx.globalAlpha = 0.95;
-            if (previewSettings.lineStyle === 'dotted') {
-                const gap = Math.max(4, lw * 2.5);
-                ctx.setLineDash([lw * scalePx, gap * scalePx]);
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth * scalePx, gap * scalePx]);
             } else ctx.setLineDash([]);
         } else {
             ctx.strokeStyle = roi.color || '#00ff00';
-            ctx.lineWidth = 2 * scalePx;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth * scalePx;
             ctx.globalAlpha = 0.95;
             ctx.setLineDash([]);
         }
@@ -976,17 +1250,24 @@ function drawROIOverlayCoronal(ctx, volume, sliceY, displayParams) {
         const segments = getOrBuildContoursCor(roi.name, sliceY, volume);
         if (!segments || segments.length === 0) return;
         if (previewSettings && roi.selected) {
-            const lw = previewSettings.lineWidth || 2;
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
             ctx.strokeStyle = '#ffff00';
-            ctx.lineWidth = lw * scalePx;
+            ctx.lineWidth = effectiveWidth * scalePx;
             ctx.globalAlpha = 0.95;
-            if (previewSettings.lineStyle === 'dotted') {
-                const gap = Math.max(4, lw * 2.5);
-                ctx.setLineDash([lw * scalePx, gap * scalePx]);
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth * scalePx, gap * scalePx]);
             } else ctx.setLineDash([]);
         } else {
             ctx.strokeStyle = roi.color || '#00ff00';
-            ctx.lineWidth = 2 * scalePx;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth * scalePx;
             ctx.globalAlpha = 0.95;
             ctx.setLineDash([]);
         }
@@ -1088,17 +1369,24 @@ function drawROIOverlayOnCanvas(ctx, ctData, sliceIndex, width, height, displayP
         }
 
         if (previewActive) {
-            const lw = previewSettings.lineWidth || 2;
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
             ctx.strokeStyle = '#ffff00';
-            ctx.lineWidth = lw;
+            ctx.lineWidth = effectiveWidth;
             ctx.globalAlpha = 0.95;
-            if (previewSettings.lineStyle === 'dotted') {
-                const gap = Math.max(4, lw * 2.5);
-                ctx.setLineDash([lw, gap]);
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth, gap]);
             } else ctx.setLineDash([]);
         } else {
             ctx.strokeStyle = roi.color || mark.color || '#00ff00';
-            ctx.lineWidth = 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth;
             ctx.globalAlpha = 0.8;
             ctx.setLineDash([]);
         }
@@ -1541,6 +1829,7 @@ function stampHU(huData, width, height, x, y, huValue, lineWidth) {
 
 function applyFillHUFromPolygons(huData, baselineHU, width, height, polygons, deltaHU) {
     if (!polygons || polygons.length === 0) return;
+    if (!Number.isFinite(deltaHU)) return;
 
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     polygons.forEach(poly => {
@@ -1584,8 +1873,8 @@ function applyFillHUFromPolygons(huData, baselineHU, width, height, polygons, de
 
     const imageData = ctx.getImageData(0, 0, bboxW, bboxH);
     const data = imageData.data;
-    const delta = Number.isFinite(deltaHU) ? deltaHU : -100;
     const clampHU = (val) => Math.max(-1024, Math.min(12000, val));
+    const safeDelta = Math.max(-5000, Math.min(5000, deltaHU));
 
     for (let y = 0; y < bboxH; y++) {
         const py = minYFloor + y;
@@ -1598,22 +1887,25 @@ function applyFillHUFromPolygons(huData, baselineHU, width, height, polygons, de
             if (alpha < 128) continue;
             const idx = rowBase + px;
             const sourceValue = baselineHU ? baselineHU[idx] : huData[idx];
-            huData[idx] = clampHU(sourceValue + delta);
+            huData[idx] = clampHU(sourceValue + safeDelta);
         }
     }
 }
 
 function stampFooterAnnotation(huData, width, height, roiEntries, delta = FOOTER_DELTA_HU, noteText = '') {
     if (!roiEntries || roiEntries.length === 0) return;
-    // Build up to three lines:
-    // 0) Optional note (adaptive truncated)
-    // 1) "Name, Line Style[, +/-HU overlay] | ..."
-    // 2) "NOT FOR DOSE CALCULATION"
+    // Build footer lines:
+    // 0..n) Optional note (up to 5 lines)
+    // last-1) "Name, Line Style[, +/-HU overlay] | ..."
+    // last) "NOT FOR DOSE CALCULATION"
     const line1 = roiEntries.map(entry => {
         const name = entry?.name || 'ROI';
         const styleStr = (String(entry?.lineStyle).toLowerCase() === 'dotted') ? 'Dotted' : 'Solid';
         const d = entry?.deltaHU;
-        const overlay = (Number.isFinite(d) && d !== 0) ? `, ${d > 0 ? '+' : ''}${d} HU overlay` : '';
+        let overlay = '';
+        if (Number.isFinite(d) && d !== 0) {
+            overlay = `, ${d > 0 ? '+' : ''}${Math.round(d)} HU overlay`;
+        }
         return `${name}, ${styleStr}${overlay}`;
     }).join(' | ');
     const line2 = 'NOT FOR DOSE CALCULATION';
@@ -1624,12 +1916,12 @@ function stampFooterAnnotation(huData, width, height, roiEntries, delta = FOOTER
     let mctx = canvas.getContext('2d');
     if (!mctx) return;
     mctx.font = `${FOOTER_FONT_PX}px sans-serif`;
-    // Wrap note to max 3 lines across full width
+    // Wrap note up to 5 lines across full width
     const margin = 0; // full width
     const hasNote = !!noteText && String(noteText).trim().length > 0;
     let noteLines = [];
     if (hasNote) {
-        const maxLines = 3;
+        const maxLines = 5;
         const words = String(noteText).trim().split(/\s+/);
         let current = '';
         for (const w of words) {
@@ -1705,7 +1997,7 @@ function burnSlices(sourceSlices, burnInSettings, options = {}) {
     } = options;
 
     const totalSlices = sourceSlices.length;
-    const anyFillEnabled = burnInSettings.some(s => s.fill);
+    const anyFillEnabled = burnInSettings.some(s => s.fill && Number.isFinite(s.fillDeltaHU));
     const processed = [];
 
     for (let sliceIdx = 0; sliceIdx < totalSlices; sliceIdx++) {
@@ -1802,6 +2094,7 @@ function burnSlices(sourceSlices, burnInSettings, options = {}) {
         if (anyFillEnabled) {
             burnInSettings.forEach(setting => {
                 if (!setting.fill) return;
+                if (!Number.isFinite(setting.fillDeltaHU)) return;
                 const polys = roiPolysForSlice.get(setting.name);
                 if (polys && polys.length) {
                     applyFillHUFromPolygons(huData, baselineHU || huData, width, height, polys, setting.fillDeltaHU);
@@ -1821,7 +2114,11 @@ function burnSlices(sourceSlices, burnInSettings, options = {}) {
         });
 
         if (footerDelta) {
-            const footerEntries = burnInSettings.map(s => ({ name: s.name, lineStyle: s.lineStyle, deltaHU: s.fill ? s.fillDeltaHU : null }));
+            const footerEntries = burnInSettings.map(s => ({
+                name: s.name,
+                lineStyle: s.lineStyle,
+                deltaHU: (s.fill && Number.isFinite(s.fillDeltaHU)) ? s.fillDeltaHU : null
+            }));
             const noteText = options && typeof options.noteText === 'string' ? options.noteText : '';
             stampFooterAnnotation(huData, width, height, footerEntries, footerDelta, noteText);
         }

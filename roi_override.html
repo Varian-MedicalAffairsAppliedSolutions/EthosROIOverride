@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ROI Override Tool | Medical Imaging</title>
-    <script>
+    <!-- <script>
         (function enforceRegistrationGate(){
             try {
                 var isRegistered = localStorage.getItem('roioverride_registered');
@@ -18,7 +18,7 @@
                 window.location.replace('gate/index.html' + qs2);
             }
         })();
-    </script>
+    </script> -->
     <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO1bG1kAAAAASUVORK5CYII=" />
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
@@ -1145,11 +1145,6 @@
                                 </div>
 
                                 <div class="control-row">
-                                    <label class="control-label">Footer Note:</label>
-                                    <textarea id="footerNote" class="control-input" rows="3" style="height:auto; resize: vertical;" placeholder="Optional instructions (up to 3 lines, burned above ROI line)"></textarea>
-                                </div>
-
-                                <div class="control-row">
                                     <label class="control-label">Overlay Fill:</label>
                                     <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
                                         <label style="display:flex;align-items:center;gap:6px;">
@@ -1157,9 +1152,25 @@
                                             <span>Enable</span>
                                         </label>
                                         <label style="display:flex;align-items:center;gap:6px;">
-                                            <input type="number" id="fillPercent" value="-100" step="25" min="-1000" max="1000" style="width:72px;" title="HU delta applied inside ROI during preview">
-                                            <span>HU delta</span>
+                                            <input type="number" id="fillPercent" value="-100" step="25" min="-1000" max="1000" style="width:82px;" title="HU delta applied inside ROI during preview and burn">
+                                            <span>Fill ΔHU</span>
                                         </label>
+                                    </div>
+                                </div>
+
+                                <div class="control-row" id="perRoiOverridesRow" style="display:none;align-items:stretch;">
+                                    <label class="control-label" style="padding-top:6px;">Per-ROI Overrides:</label>
+                                    <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+                                        <div class="roi-config-list" id="roiConfigList"></div>
+                                        <div style="font-size:11px;color:var(--text-dim);">Choose outline style and per-structure fill ΔHU (50 HU increments). Leave blank to follow global value.</div>
+                                    </div>
+                                </div>
+
+                                <div class="control-row">
+                                    <label class="control-label">Burn Notes:</label>
+                                    <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+                                        <textarea id="footerNote" class="control-input" rows="5" style="resize:vertical;min-height:90px;max-height:160px;line-height:1.35;padding:8px 10px;" placeholder="Optional instructions (up to 5 lines, burned above ROI line)"></textarea>
+                                        <div id="notesCharCount" style="font-size:11px;color:var(--text-dim);align-self:flex-end;">0 chars</div>
                                     </div>
                                 </div>
 
