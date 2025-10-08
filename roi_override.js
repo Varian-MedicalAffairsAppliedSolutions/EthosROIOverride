@@ -1983,6 +1983,50 @@ function stampFooterAnnotation(huData, width, height, roiEntries, delta = FOOTER
     }
 }
 
+// Hard-burn a warning label at the top-left corner on every slice
+function stampTopLeftWarning(huData, width, height, text = 'NOT VALIDATED FOR CLINICAL USE') {
+    if (!text || !text.trim()) return;
+
+    // Prepare a measuring canvas to size the final draw
+    const measureCanvas = document.createElement('canvas');
+    const mctx = measureCanvas.getContext('2d');
+    if (!mctx) return;
+    mctx.font = `${FOOTER_FONT_PX}px sans-serif`;
+    const margin = Math.max(FOOTER_MARGIN, 4);
+    const metrics = mctx.measureText(text);
+    // Ensure we do not exceed the image width
+    const canvasWidth = Math.min(width, Math.ceil(metrics.width) + margin * 2);
+    const canvasHeight = FOOTER_FONT_PX + margin * 2;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.font = `${FOOTER_FONT_PX}px sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, margin, margin);
+
+    const img = ctx.getImageData(0, 0, canvasWidth, canvasHeight);
+    const data = img.data;
+    const clampHU = (val) => Math.max(-1024, Math.min(12000, val));
+    // Stamp at top-left origin (0,0)
+    for (let y = 0; y < canvasHeight; y++) {
+        const py = y;
+        if (py < 0 || py >= height) continue;
+        const rowBase = py * width;
+        for (let x = 0; x < canvasWidth; x++) {
+            const alpha = data[(y * canvasWidth + x) * 4 + 3];
+            if (alpha < 128) continue;
+            const idx = rowBase + x;
+            huData[idx] = clampHU(FOOTER_TEXT_HU);
+        }
+    }
+}
+
 function burnSlices(sourceSlices, burnInSettings, options = {}) {
     if (!sourceSlices || sourceSlices.length === 0) return [];
     if (!burnInSettings || burnInSettings.length === 0) return sourceSlices.map(slice => ({ ...slice }));
@@ -2122,6 +2166,9 @@ function burnSlices(sourceSlices, burnInSettings, options = {}) {
             const noteText = options && typeof options.noteText === 'string' ? options.noteText : '';
             stampFooterAnnotation(huData, width, height, footerEntries, footerDelta, noteText);
         }
+
+        // Always stamp a clinical-use warning at the top-left of each slice
+        stampTopLeftWarning(huData, width, height, 'NOT VALIDATED FOR CLINICAL USE');
 
         // TODO: textEnabled support for future enhancement
         if (textEnabled && sliceIdx % Math.max(1, textInterval) === 0) {
