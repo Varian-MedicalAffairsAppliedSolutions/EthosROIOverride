@@ -41,7 +41,7 @@ window.refreshMark = window.refreshMark || function(){};
                 lineStyle: styleVal,
                 defaultHU: defaultHU ? parseInt(defaultHU.value) : 1000
             };
-            if (window.previewMode) displaySimpleViewer();
+            refreshPreviewIfActive();
         };
 
         const getCurrentStyle = () => {
@@ -74,6 +74,13 @@ window.refreshMark = window.refreshMark || function(){};
 // Preview mode state
 window.previewMode = false;
 window.previewOverlays = [];
+
+let previewIsRealBurn = false;
+let previewBurnedCTData = [];
+let previewVolumeData = null;
+let previewRestoreState = null;
+let previewRestoreToggle = null;
+let previewRegenTimer = null;
 
 // DICOM Tag constants
 const Tag = {
@@ -120,6 +127,33 @@ const HU_PRESETS = {
 
 // Debug toggle
 const DEBUG = false;
+
+const TEXT_FONT_PT_DEFAULT = 12;
+// Reduce footer font size by ~2 points (~2.67 px from previous 18px -> ~15px)
+const FOOTER_FONT_PX = 15;
+const FOOTER_MARGIN = 8;
+const FOOTER_DELTA_HU = 120;
+const FOOTER_TEXT_HU = 1000;
+
+function ptToPx(pt) {
+    return Math.max(6, Math.round(pt * 96 / 72));
+}
+
+function parseHuDelta(raw, fallback) {
+    if (raw === null || raw === undefined) return fallback;
+    let str = String(raw).trim();
+    if (!str) return fallback;
+    str = str.replace(/hu$/i, '').replace(/\s+/g, '');
+    const value = parseFloat(str);
+    return Number.isFinite(value) ? value : fallback;
+}
+
+function getFooterNoteText() {
+    const el = document.getElementById('footerNote');
+    if (!el) return '';
+    const lines = String(el.value || '').split(/\r?\n/).slice(0, 5);
+    return lines.join('\n').trim();
+}
 
 // Build default series name like CT_MMDDYY_Burn
 function getDefaultSeriesName() {
@@ -549,21 +583,13 @@ function populateROIVisibilityList() {
             item.classList.toggle('selected', roi.selected);
             updateBurnInList();
             try {
-                // Auto-preview: enable when any ROI is selected; disable when none
                 const anySelected = roiData.some(r => r.selected);
-                window.previewMode = anySelected;
-                // Sync preview settings from controls
-                const lineStyleSel = document.querySelector('input[name="lineStyle"]:checked');
-                const styleVal = lineStyleSel ? lineStyleSel.value : 'solid';
-                const lineWidthCtrl = document.getElementById('lineWidth');
-                const lwVal = lineWidthCtrl ? parseInt(lineWidthCtrl.value) : (styleVal === 'dotted' ? 2 : 1);
-                const defaultHU = document.getElementById('defaultHU');
-                window.previewSettings = {
-                    lineWidth: lwVal,
-                    lineStyle: styleVal,
-                    defaultHU: defaultHU ? parseInt(defaultHU.value) : 1000
-                };
-                displaySimpleViewer();
+                if (!anySelected && window.previewMode) {
+                    clearPreview();
+                } else {
+                    window.previewSettings = getLivePreviewSettings();
+                    refreshPreviewIfActive();
+                }
             } catch (e) { /* no-op */ }
         };
         const burnSlider = document.createElement('span');
@@ -618,32 +644,529 @@ function updateBurnInList() {
             countLabel.textContent = `Selected ROIs: ${selectedROIs.length}`;
         }
     }
+
+    // Populate per-ROI override list for selected structures
+    const overridesRow = document.getElementById('perRoiOverridesRow');
+    const listContainer = document.getElementById('roiConfigList');
+    if (overridesRow && listContainer) {
+        const hasOverrides = selectedROIs.length > 0;
+        overridesRow.style.display = hasOverrides ? 'flex' : 'none';
+        listContainer.innerHTML = '';
+
+        if (hasOverrides) {
+            const globalFill = parseHuDelta(document.getElementById('fillPercent')?.value ?? -100, -100);
+            const globalWidth = parseFloat(document.getElementById('lineWidth')?.value || '2');
+            const fillEnabled = !!document.getElementById('enableFill')?.checked;
+
+            selectedROIs.forEach(roi => {
+                if (typeof roi.lineStyleOverride === 'undefined') roi.lineStyleOverride = 'global';
+                if (typeof roi.fillDeltaOverride === 'undefined' || roi.fillDeltaOverride === '') roi.fillDeltaOverride = null;
+                if (typeof roi.lineWidthOverride === 'undefined' || roi.lineWidthOverride === '') roi.lineWidthOverride = null;
+
+                const item = document.createElement('div');
+                item.className = 'roi-config-item';
+
+                const left = document.createElement('div');
+                left.style.display = 'flex';
+                left.style.alignItems = 'center';
+                left.style.gap = '8px';
+                const colorBox = document.createElement('div');
+                colorBox.className = 'roi-color';
+                colorBox.style.backgroundColor = roi.color || '#888';
+                const nameSpan = document.createElement('div');
+                nameSpan.className = 'roi-name';
+                nameSpan.textContent = roi.name;
+                left.appendChild(colorBox);
+                left.appendChild(nameSpan);
+
+                const right = document.createElement('div');
+                right.style.display = 'flex';
+                right.style.flexWrap = 'wrap';
+                right.style.gap = '8px';
+                right.style.alignItems = 'center';
+
+                const styleSel = document.createElement('select');
+                styleSel.className = 'preset-select';
+                styleSel.title = 'Outline style';
+                [{ label: 'Global', value: 'global' }, { label: 'Solid', value: 'solid' }, { label: 'Dotted', value: 'dotted' }]
+                    .forEach(opt => {
+                        const o = document.createElement('option');
+                        o.value = opt.value;
+                        o.textContent = opt.label;
+                        styleSel.appendChild(o);
+                    });
+                styleSel.value = roi.lineStyleOverride || 'global';
+                styleSel.addEventListener('change', () => {
+                    roi.lineStyleOverride = styleSel.value;
+                    refreshPreviewIfActive();
+                });
+
+                const widthInput = document.createElement('input');
+                widthInput.type = 'number';
+                widthInput.className = 'manual-input';
+                widthInput.style.width = '68px';
+                widthInput.step = '0.5';
+                widthInput.min = '0.5';
+                widthInput.max = '10';
+                widthInput.placeholder = 'Line px';
+                widthInput.title = 'Per-ROI contour line width (pixels)';
+                const resolveWidthValue = () => {
+                    const parsed = parseFloat(roi.lineWidthOverride);
+                    return Number.isFinite(parsed) && parsed > 0 ? parsed : globalWidth;
+                };
+                widthInput.value = String(resolveWidthValue());
+                const commitWidthValue = () => {
+                    const raw = widthInput.value.trim();
+                    if (!raw) {
+                        roi.lineWidthOverride = null;
+                        widthInput.value = String(globalWidth);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    let parsed = parseFloat(raw);
+                    if (!Number.isFinite(parsed)) {
+                        roi.lineWidthOverride = null;
+                        widthInput.value = String(globalWidth);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    parsed = Math.max(0.5, Math.min(10, parsed));
+                    parsed = Math.round(parsed * 2) / 2; // snap to 0.5 px increments
+                    roi.lineWidthOverride = parsed;
+                    widthInput.value = parsed.toString();
+                    refreshPreviewIfActive();
+                };
+                widthInput.addEventListener('blur', commitWidthValue);
+                widthInput.addEventListener('change', commitWidthValue);
+                widthInput.addEventListener('keydown', evt => {
+                    if (evt.key === 'Enter') {
+                        evt.preventDefault();
+                        commitWidthValue();
+                    }
+                });
+
+                const fillInput = document.createElement('input');
+                fillInput.type = 'number';
+                fillInput.className = 'manual-input';
+                fillInput.style.width = '72px';
+                fillInput.step = '50';
+                fillInput.min = '-1000';
+                fillInput.max = '1000';
+                fillInput.placeholder = 'ΔHU';
+                fillInput.title = 'Per-ROI fill ΔHU (50 HU increments)';
+                const resolveDisplayValue = () => {
+                    if (roi.fillDeltaOverride === null || roi.fillDeltaOverride === undefined) return globalFill;
+                    if (!Number.isFinite(roi.fillDeltaOverride)) return globalFill;
+                    return roi.fillDeltaOverride;
+                };
+                fillInput.value = String(resolveDisplayValue());
+
+                const minusBtn = document.createElement('button');
+                minusBtn.type = 'button';
+                minusBtn.textContent = '−';
+                minusBtn.title = 'Decrease fill ΔHU by 50';
+                const plusBtn = document.createElement('button');
+                plusBtn.type = 'button';
+                plusBtn.textContent = '+';
+                plusBtn.title = 'Increase fill ΔHU by 50';
+                [minusBtn, plusBtn].forEach(btn => {
+                    btn.style.padding = '0 6px';
+                    btn.style.height = '24px';
+                    btn.style.border = '1px solid var(--input-border)';
+                    btn.style.background = 'var(--input-bg)';
+                    btn.style.color = 'var(--text-primary)';
+                    btn.style.borderRadius = '3px';
+                    btn.style.cursor = 'pointer';
+                });
+
+                const normalizeDelta = (value) => {
+                    let parsed = parseFloat(value);
+                    if (!Number.isFinite(parsed)) return null;
+                    parsed = Math.round(parsed / 50) * 50;
+                    parsed = Math.max(-1000, Math.min(1000, parsed));
+                    return parsed;
+                };
+
+                const commitFillValue = () => {
+                    if (!fillEnabled) {
+                        fillInput.value = String(resolveDisplayValue());
+                        return;
+                    }
+                    const raw = fillInput.value.trim();
+                    if (!raw) {
+                        roi.fillDeltaOverride = null;
+                        fillInput.value = String(globalFill);
+                        refreshPreviewIfActive();
+                        return;
+                    }
+                    const normalized = normalizeDelta(raw);
+                    if (normalized === null) {
+                        roi.fillDeltaOverride = null;
+                        fillInput.value = String(globalFill);
+                    } else {
+                        roi.fillDeltaOverride = normalized;
+                        fillInput.value = String(normalized);
+                    }
+                    refreshPreviewIfActive();
+                };
+
+                fillInput.addEventListener('blur', commitFillValue);
+                fillInput.addEventListener('change', commitFillValue);
+                fillInput.addEventListener('keydown', evt => {
+                    if (evt.key === 'Enter') {
+                        evt.preventDefault();
+                        commitFillValue();
+                    }
+                });
+
+                const adjustFill = (delta) => {
+                    if (!fillEnabled) return;
+                    let current = resolveDisplayValue();
+                    if (!Number.isFinite(current)) current = globalFill;
+                    current = normalizeDelta(current + delta);
+                    if (current === null) return;
+                    roi.fillDeltaOverride = current;
+                    fillInput.value = String(current);
+                    refreshPreviewIfActive();
+                };
+                minusBtn.addEventListener('click', () => adjustFill(-50));
+                plusBtn.addEventListener('click', () => adjustFill(50));
+
+                const deltaWrapper = document.createElement('div');
+                deltaWrapper.style.display = 'flex';
+                deltaWrapper.style.alignItems = 'center';
+                deltaWrapper.style.gap = '4px';
+                deltaWrapper.appendChild(minusBtn);
+                deltaWrapper.appendChild(fillInput);
+                deltaWrapper.appendChild(plusBtn);
+
+                const applyFillEnabledState = () => {
+                    const disabled = !fillEnabled;
+                    fillInput.disabled = disabled;
+                    minusBtn.disabled = disabled;
+                    plusBtn.disabled = disabled;
+                    if (disabled) {
+                        fillInput.value = String(resolveDisplayValue());
+                    }
+                };
+                applyFillEnabledState();
+
+                right.appendChild(styleSel);
+                right.appendChild(widthInput);
+                right.appendChild(deltaWrapper);
+
+                item.appendChild(left);
+                item.appendChild(right);
+                listContainer.appendChild(item);
+            });
+        }
+    }
 }
 
 // Preview burn-in without modifying data
-function previewBurnIn() {
-    // Deprecated: preview is now automatic on ROI toggle
-    // Keep as no-op for backward compatibility
-    const lineStyleSel = document.querySelector('input[name="lineStyle"]:checked');
-    const styleVal = lineStyleSel ? lineStyleSel.value : 'solid';
-    const lineWidthCtrl = document.getElementById('lineWidth');
-    const lwVal = lineWidthCtrl ? parseInt(lineWidthCtrl.value) : (styleVal === 'dotted' ? 2 : 1);
-    const defaultHU = document.getElementById('defaultHU');
-    window.previewSettings = {
-        lineWidth: lwVal,
-        lineStyle: styleVal,
-        defaultHU: defaultHU ? parseInt(defaultHU.value) : 1000
-    };
-    window.previewMode = roiData.some(r => r.selected);
+async function previewBurnIn() {
+    if (window.previewMode && previewIsRealBurn) {
+        clearPreview();
+        showMessage('info', 'Preview mode disabled.');
+        return;
+    }
+
+    const success = await buildPreviewBurn(true);
+    if (!success) {
+        clearPreview();
+        return;
+    }
+
+    if (!window.previewMode) window.previewMode = true;
+    previewIsRealBurn = true;
+
+    if (window.simpleViewerData) {
+        previewRestoreState = window.simpleViewerData.isShowingBurned;
+        window.simpleViewerData.isShowingBurned = true;
+    } else {
+        previewRestoreState = false;
+        await initializeSimpleViewer();
+        if (window.simpleViewerData) window.simpleViewerData.isShowingBurned = true;
+    }
+
+    const toggleEl = document.getElementById('toggleBurnedView');
+    if (toggleEl) {
+        previewRestoreToggle = { checked: toggleEl.checked, disabled: toggleEl.disabled };
+        toggleEl.checked = true;
+        toggleEl.disabled = true;
+    }
+
+    showMessage('info', 'Preview mode showing in-memory burned images. Click Preview again to exit.');
     displaySimpleViewer();
+    setPreviewUI(true);
 }
 
-// Clear preview mode
+async function buildPreviewBurn(showErrors = false) {
+    const config = collectBurnConfig({ suppressSelectionError: !showErrors });
+    if (!config) return false;
+    const { burnInSettings } = config;
+    if (!burnInSettings || burnInSettings.length === 0) {
+        if (showErrors) showMessage('error', 'Select at least one ROI before previewing.');
+        return false;
+    }
+    if (!ctFiles || ctFiles.length === 0) {
+        if (showErrors) showMessage('error', 'Load CT images before previewing.');
+        return false;
+    }
+
+    try {
+        updateStatus('Building preview...');
+        updateProgress(0);
+        previewBurnedCTData = burnSlices(ctFiles, burnInSettings, {
+            textEnabled: false,
+            textInterval: 1,
+            textDeltaHU: 100,
+            textFontPx: ptToPx(TEXT_FONT_PT_DEFAULT),
+            footerDelta: FOOTER_DELTA_HU,
+            noteText: config.noteText,
+            progressCallback: (current, total) => updateProgress((current / total) * 100)
+        });
+        previewVolumeData = null;
+        // Force MPR to rebuild from preview series
+        window.volumeData = null;
+        window.previewSettings = getLivePreviewSettings();
+        window.previewMode = true;
+        previewIsRealBurn = true;
+        return true;
+    } catch (err) {
+        console.error('Preview generation failed:', err);
+        if (showErrors) showMessage('error', `Preview failed: ${err.message || err}`);
+        return false;
+    } finally {
+        updateStatus('');
+        updateProgress(0);
+    }
+}
+
 function clearPreview() {
     window.previewMode = false;
     window.previewOverlays = [];
+    window.previewSettings = null;
+    previewIsRealBurn = false;
+    previewBurnedCTData = [];
+    previewVolumeData = null;
+    // no preview footer overlay; preview is exact burned pixels
+    if (window.simpleViewerData) {
+        window.simpleViewerData.isShowingBurned = previewRestoreState || false;
+    }
+    const toggleEl = document.getElementById('toggleBurnedView');
+    if (toggleEl && previewRestoreToggle) {
+        toggleEl.checked = !!previewRestoreToggle.checked;
+        toggleEl.disabled = !!previewRestoreToggle.disabled;
+    } else if (toggleEl) {
+        toggleEl.disabled = false;
+    }
+    previewRestoreState = null;
+    previewRestoreToggle = null;
+    if (previewRegenTimer) {
+        clearTimeout(previewRegenTimer);
+        previewRegenTimer = null;
+    }
+    // Force MPR to rebuild from original series
+    window.volumeData = null;
+    setPreviewUI(false);
     displaySimpleViewer();
 }
+
+function getLivePreviewSettings() {
+    if (!window.previewMode) return null;
+    return {
+        lineWidth: parseInt(document.getElementById('lineWidth')?.value || 2, 10),
+        lineStyle: document.querySelector('input[name="lineStyle"]:checked')?.value || 'solid',
+        fillEnabled: !!document.getElementById('enableFill')?.checked,
+        fillDeltaHU: parseHuDelta(document.getElementById('fillPercent')?.value ?? -100, -100),
+        textEnabled: false,
+        textInterval: 1,
+        textDeltaHU: 100,
+        textFontPt: TEXT_FONT_PT_DEFAULT
+    };
+}
+
+function refreshPreviewIfActive() {
+    if (!window.previewMode) return;
+    if (previewIsRealBurn) {
+        schedulePreviewRegeneration();
+    } else {
+        displaySimpleViewer();
+    }
+}
+
+function setPreviewUI(active) {
+    const btn = document.getElementById('previewToggle');
+    if (btn) {
+        btn.textContent = active ? 'Preview Off' : 'Preview On';
+    }
+    const banner = document.getElementById('previewBanner');
+    if (banner) {
+        banner.style.display = active ? 'block' : 'none';
+    }
+}
+
+function schedulePreviewRegeneration() {
+    if (previewRegenTimer) clearTimeout(previewRegenTimer);
+    previewRegenTimer = setTimeout(() => {
+        previewRegenTimer = null;
+        if (!window.previewMode || !previewIsRealBurn) return;
+        buildPreviewBurn(false).catch(err => console.error('Preview regeneration failed:', err));
+    }, 250);
+}
+
+function collectBurnConfig(options = {}) {
+    const { suppressSelectionError = false } = options;
+
+    let imageSetName = (document.getElementById('imageSetName')?.value || '').trim();
+    if (!imageSetName) {
+        const def = getDefaultSeriesName();
+        imageSetName = def;
+        const input = document.getElementById('imageSetName');
+        if (input) input.value = def;
+    }
+
+    const defaultHU = parseInt(document.getElementById('defaultHU')?.value, 10);
+    const resolvedDefaultHU = Number.isFinite(defaultHU) ? defaultHU : 1000;
+
+    const lineStyleSel = document.querySelector('input[name="lineStyle"]:checked');
+    const lineStyle = lineStyleSel ? lineStyleSel.value : 'solid';
+    const lineWidthCtrl = document.getElementById('lineWidth');
+    const lineWidth = lineWidthCtrl ? parseInt(lineWidthCtrl.value, 10) || 2 : 2;
+
+    const fillEnabled = !!document.getElementById('enableFill')?.checked;
+    const fillDeltaHU = parseHuDelta(document.getElementById('fillPercent')?.value ?? -100, -100);
+
+    const burnInSettings = [];
+    const burnNames = [];
+    if (Array.isArray(roiData)) {
+        roiData.forEach(roi => {
+            if (!roi.selected) return;
+
+            const roiHU = (() => {
+                if (roi.huValue !== undefined && roi.huValue !== null && roi.huValue !== '') {
+                    const parsed = parseFloat(roi.huValue);
+                    if (Number.isFinite(parsed)) return parsed;
+                }
+                return resolvedDefaultHU;
+            })();
+
+            const perRoiLineStyle = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : lineStyle;
+
+            let perRoiFillDelta = fillDeltaHU;
+            if (fillEnabled) {
+                const override = parseHuDelta(roi.fillDeltaOverride, NaN);
+                if (Number.isFinite(override)) {
+                    perRoiFillDelta = override;
+                }
+            }
+
+            const perRoiLineWidth = (() => {
+                const override = parseFloat(roi.lineWidthOverride);
+                if (Number.isFinite(override) && override > 0) {
+                    return override;
+                }
+                return lineWidth;
+            })();
+
+            burnInSettings.push({
+                name: roi.name,
+                number: roi.number,
+                contour: true,
+                fill: fillEnabled,
+                fillDeltaHU: perRoiFillDelta,
+                huValue: Number.isFinite(roiHU) ? roiHU : resolvedDefaultHU,
+                lineStyle: perRoiLineStyle,
+                lineWidth: perRoiLineWidth
+            });
+            burnNames.push(roi.name);
+        });
+    }
+
+    if (burnInSettings.length === 0) {
+        if (!suppressSelectionError) {
+            showMessage('error', 'Please select at least one ROI for burn-in');
+        }
+        return null;
+    }
+
+    let separateSeries = false;
+    try {
+        const exportModeSel = document.querySelector('input[name="exportMode"]:checked');
+        if (exportModeSel) {
+            separateSeries = (exportModeSel.value === 'separate');
+        } else if (!suppressSelectionError && burnInSettings.length > 1) {
+            const oneSeries = window.confirm('Burn all selected ROIs into ONE series?\nClick Cancel to create a SEPARATE series per ROI.');
+            separateSeries = !oneSeries;
+        }
+    } catch (err) {
+        console.debug('collectBurnConfig export mode error:', err);
+    }
+
+    window.previewSettings = {
+        lineWidth,
+        lineStyle,
+        defaultHU: resolvedDefaultHU,
+        fillEnabled,
+        fillDeltaHU
+    };
+
+    return {
+        imageSetName,
+        defaultHU: resolvedDefaultHU,
+        lineStyle,
+        lineWidth,
+        fillEnabled,
+        fillDeltaHU,
+        noteText: getFooterNoteText(),
+        burnInSettings,
+        burnNames,
+        separateSeries
+    };
+}
+
+window.addEventListener('load', () => {
+    const fillToggle = document.getElementById('enableFill');
+    if (fillToggle) fillToggle.addEventListener('change', () => {
+        updateBurnInList();
+        refreshPreviewIfActive();
+    });
+    const fillPercent = document.getElementById('fillPercent');
+    if (fillPercent) fillPercent.addEventListener('input', () => {
+        updateBurnInList();
+        if (!window.previewMode) return;
+        if (previewIsRealBurn) schedulePreviewRegeneration();
+        else refreshPreviewIfActive();
+    });
+    const lineWidthInput = document.getElementById('lineWidth');
+    if (lineWidthInput) lineWidthInput.addEventListener('input', () => {
+        updateBurnInList();
+        refreshPreviewIfActive();
+    });
+    const footerNote = document.getElementById('footerNote');
+    const footerCounter = document.getElementById('notesCharCount');
+    const enforceFooterLimits = () => {
+        if (!footerNote) return;
+        const lines = footerNote.value.split(/\r?\n/);
+        if (lines.length > 5) {
+            footerNote.value = lines.slice(0, 5).join('\n');
+        }
+        if (footerCounter) footerCounter.textContent = `${footerNote.value.length} chars`;
+    };
+    if (footerNote) {
+        footerNote.addEventListener('input', () => {
+            enforceFooterLimits();
+            if (!window.previewMode) return;
+            if (previewIsRealBurn) schedulePreviewRegeneration();
+            else refreshPreviewIfActive();
+        });
+        footerNote.addEventListener('blur', enforceFooterLimits);
+        setTimeout(enforceFooterLimits, 0);
+    }
+});
 
 function updateROIOverlay() {
     // Redraw the current view with updated ROI visibility
@@ -658,23 +1181,38 @@ function drawROIOverlaySagittal(ctx, volume, sliceX, displayParams) {
     if (!roiData || roiData.length === 0) return;
     if (!displayParams) return;
     if (!volume.imagePosition || volume.imagePosition.length === 0) return;
+    // During real preview, pixels are already burned into the preview series
+    // and visible in the MPR. Suppress yellow overlay lines to match external behavior.
+    if (window.previewMode && previewIsRealBurn) return;
 
     const scaleX = displayParams.displayWidth / displayParams.dataWidth;
     const scaleY = displayParams.displayHeight / displayParams.dataHeight;
     const scalePx = Math.min(scaleX, scaleY);
+    const previewSettings = getLivePreviewSettings();
 
     roiData.forEach((roi) => {
         if (!roi.visible) return;
         const segments = getOrBuildContoursSag(roi.name, sliceX, volume);
         if (!segments || segments.length === 0) return;
-        if (window.previewMode && roi.selected) {
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = (window.previewSettings?.lineWidth || 2) * scalePx;
+        if (previewSettings && roi.selected) {
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = effectiveWidth * scalePx;
             ctx.globalAlpha = 0.95;
-            if (window.previewSettings?.lineStyle === 'dotted') ctx.setLineDash([2 * scalePx, 3 * scalePx]); else ctx.setLineDash([]);
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth * scalePx, gap * scalePx]);
+            } else ctx.setLineDash([]);
         } else {
             ctx.strokeStyle = roi.color || '#00ff00';
-            ctx.lineWidth = 2 * scalePx;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth * scalePx;
             ctx.globalAlpha = 0.95;
             ctx.setLineDash([]);
         }
@@ -698,23 +1236,38 @@ function drawROIOverlayCoronal(ctx, volume, sliceY, displayParams) {
     if (!roiData || roiData.length === 0) return;
     if (!displayParams) return;
     if (!volume.imagePosition || volume.imagePosition.length === 0) return;
+    // During real preview, pixels are already burned into the preview series
+    // and visible in the MPR. Suppress yellow overlay lines to match external behavior.
+    if (window.previewMode && previewIsRealBurn) return;
 
     const scaleX = displayParams.displayWidth / displayParams.dataWidth;
     const scaleY = displayParams.displayHeight / displayParams.dataHeight;
     const scalePx = Math.min(scaleX, scaleY);
+    const previewSettings = getLivePreviewSettings();
 
     roiData.forEach((roi) => {
         if (!roi.visible) return;
         const segments = getOrBuildContoursCor(roi.name, sliceY, volume);
         if (!segments || segments.length === 0) return;
-        if (window.previewMode && roi.selected) {
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = (window.previewSettings?.lineWidth || 2) * scalePx;
+        if (previewSettings && roi.selected) {
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = effectiveWidth * scalePx;
             ctx.globalAlpha = 0.95;
-            if (window.previewSettings?.lineStyle === 'dotted') ctx.setLineDash([2 * scalePx, 3 * scalePx]); else ctx.setLineDash([]);
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth * scalePx, gap * scalePx]);
+            } else ctx.setLineDash([]);
         } else {
             ctx.strokeStyle = roi.color || '#00ff00';
-            ctx.lineWidth = 2 * scalePx;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth * scalePx;
             ctx.globalAlpha = 0.95;
             ctx.setLineDash([]);
         }
@@ -736,6 +1289,7 @@ function drawROIOverlayCoronal(ctx, volume, sliceY, displayParams) {
 function drawROIOverlayOnCanvas(ctx, ctData, sliceIndex, width, height, displayParams) {
     if (!RTSSMarks || RTSSMarks.length === 0) return;
     if (!roiData || roiData.length === 0) return;
+    if (window.previewMode && previewIsRealBurn) return;
     
     // Get the SOP Instance UID for the current slice
     const sopUID = ctData.dataSet.string(Tag.SOPInstanceUID);
@@ -769,6 +1323,8 @@ function drawROIOverlayOnCanvas(ctx, ctData, sliceIndex, width, height, displayP
         appliedDisplayTransform = true;
     }
     
+    const previewSettings = getLivePreviewSettings();
+
     // Draw each ROI contour
     RTSSMarks.forEach((mark) => {
         // Check if this contour belongs to the current slice
@@ -783,55 +1339,64 @@ function drawROIOverlayOnCanvas(ctx, ctData, sliceIndex, width, height, displayP
         if (!points || points.length === 0) return;
         
         ctx.save();
-        
-        // Check if in preview mode and ROI is selected
-        if (window.previewMode && roi.selected) {
-            // Use preview settings
-            ctx.strokeStyle = '#ffffff';
-            ctx.lineWidth = window.previewSettings?.lineWidth || 2;
-            ctx.globalAlpha = 0.9;
-            // Apply line style
-            if (window.previewSettings?.lineStyle === 'dotted') {
-                ctx.setLineDash([2, 3]);
-            } else {
-                ctx.setLineDash([]);
-            }
-        } else {
-            // Normal overlay display
-            ctx.strokeStyle = roi.color || mark.color || '#00ff00';
-            ctx.lineWidth = 2;
-            ctx.globalAlpha = 0.8;
-            ctx.setLineDash([]);
-        }
-        
+
+        const previewActive = !!(previewSettings && roi.selected);
+
         ctx.beginPath();
-        
+        const polygon = [];
         for (let i = 0; i < points.length; i++) {
             const x = points[i].x;
             const y = points[i].y;
-            // Map patient to pixel using row/col directions (axial typical)
             const dx = x - imgPos[0];
             const dy = y - imgPos[1];
             const pixelX = (dx * rowCosines[0] + dy * colCosines[0]) / pixSpacing[0];
             const pixelY = (dx * rowCosines[1] + dy * colCosines[1]) / pixSpacing[1];
+            polygon.push([pixelX, pixelY]);
             if (i === 0) ctx.moveTo(pixelX, pixelY);
             else ctx.lineTo(pixelX, pixelY);
         }
-        
-        // Close and either fill (validation) or stroke (normal)
-        if (points.length > 2) ctx.closePath();
+
+        if (polygon.length > 2) ctx.closePath();
 
         const doFillValidation = window.showBurnValidation && window.lastBurnNames && window.lastBurnNames.includes(roi.name);
-        if (doFillValidation) {
-            const prevAlpha = ctx.globalAlpha;
-            ctx.globalAlpha = 0.5;
-            ctx.fillStyle = roi.color || '#ffff00';
-            // No outline in validation mode
+        const doPreviewFill = previewActive && previewSettings.fillEnabled;
+        if (doFillValidation || doPreviewFill) {
+            ctx.save();
+            ctx.fillStyle = doFillValidation ? (roi.color || '#ffff00') : 'rgba(255,255,0,0.18)';
+            ctx.globalAlpha = doFillValidation ? 0.5 : 1;
             ctx.fill();
-            ctx.globalAlpha = prevAlpha;
+            ctx.restore();
+        }
+
+        if (previewActive) {
+            const lwBase = previewSettings.lineWidth || 2;
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const effectiveWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : lwBase;
+            const style = (roi.lineStyleOverride && roi.lineStyleOverride !== 'global')
+                ? roi.lineStyleOverride
+                : (previewSettings.lineStyle || 'solid');
+            ctx.strokeStyle = '#ffff00';
+            ctx.lineWidth = effectiveWidth;
+            ctx.globalAlpha = 0.95;
+            if (style === 'dotted') {
+                const gap = Math.max(4, effectiveWidth * 2.5);
+                ctx.setLineDash([effectiveWidth, gap]);
+            } else ctx.setLineDash([]);
         } else {
+            ctx.strokeStyle = roi.color || mark.color || '#00ff00';
+            const overrideWidth = parseFloat(roi.lineWidthOverride);
+            const fallbackWidth = Number.isFinite(overrideWidth) && overrideWidth > 0 ? overrideWidth : 2;
+            ctx.lineWidth = fallbackWidth;
+            ctx.globalAlpha = 0.8;
+            ctx.setLineDash([]);
+        }
+
+        if (!doFillValidation || previewActive) {
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
             ctx.stroke();
         }
+
         ctx.restore();
     });
 
@@ -1233,24 +1798,350 @@ function drawContour(imageData, polygon, value, width, height) {
 
 // Stamp HU around a point with given line width (exact NxN brush in image pixels)
 function stampHU(huData, width, height, x, y, huValue, lineWidth) {
-    const size = Math.max(1, Math.floor(lineWidth));
-    if (size === 1) {
-        if (x >= 0 && x < width && y >= 0 && y < height) {
-            huData[y * width + x] = huValue;
-        }
+    const w = Math.max(1, Math.round(lineWidth || 1));
+    if (w === 1) {
+        if (x >= 0 && x < width && y >= 0 && y < height) huData[y * width + x] = huValue;
         return;
     }
-    const startX = x - Math.floor((size - 1) / 2);
-    const startY = y - Math.floor((size - 1) / 2);
-    for (let dy = 0; dy < size; dy++) {
-        for (let dx = 0; dx < size; dx++) {
-            const xx = startX + dx;
-            const yy = startY + dy;
-            if (xx >= 0 && xx < width && yy >= 0 && yy < height) {
-                huData[yy * width + xx] = huValue;
-            }
+    const even = (w % 2 === 0);
+    const half = Math.floor(w / 2);
+    let xStart, xEnd, yStart, yEnd;
+    if (even) {
+        xStart = x;
+        xEnd = x + (w - 1);
+        yStart = y;
+        yEnd = y + (w - 1);
+    } else {
+        xStart = x - half;
+        xEnd = x + half;
+        yStart = y - half;
+        yEnd = y + half;
+    }
+    xStart = Math.max(0, xStart);
+    yStart = Math.max(0, yStart);
+    xEnd = Math.min(width - 1, xEnd);
+    yEnd = Math.min(height - 1, yEnd);
+    for (let yy = yStart; yy <= yEnd; yy++) {
+        const rowBase = yy * width;
+        for (let xx = xStart; xx <= xEnd; xx++) huData[rowBase + xx] = huValue;
+    }
+}
+
+function applyFillHUFromPolygons(huData, baselineHU, width, height, polygons, deltaHU) {
+    if (!polygons || polygons.length === 0) return;
+    if (!Number.isFinite(deltaHU)) return;
+
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    polygons.forEach(poly => {
+        poly.forEach(([x, y]) => {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        });
+    });
+
+    if (!Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) return;
+
+    const margin = 2;
+    const minXFloor = Math.max(0, Math.floor(minX) - margin);
+    const minYFloor = Math.max(0, Math.floor(minY) - margin);
+    const maxXCeil = Math.min(width - 1, Math.ceil(maxX) + margin);
+    const maxYCeil = Math.min(height - 1, Math.ceil(maxY) + margin);
+    const bboxW = maxXCeil - minXFloor + 1;
+    const bboxH = maxYCeil - minYFloor + 1;
+    if (bboxW <= 0 || bboxH <= 0) return;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = bboxW;
+    canvas.height = bboxH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, bboxW, bboxH);
+    ctx.save();
+    ctx.translate(-minXFloor, -minYFloor);
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    polygons.forEach(poly => {
+        if (!poly || poly.length < 3) return;
+        ctx.moveTo(poly[0][0], poly[0][1]);
+        for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i][0], poly[i][1]);
+        ctx.closePath();
+    });
+    ctx.fill('evenodd');
+    ctx.restore();
+
+    const imageData = ctx.getImageData(0, 0, bboxW, bboxH);
+    const data = imageData.data;
+    const clampHU = (val) => Math.max(-1024, Math.min(12000, val));
+    const safeDelta = Math.max(-5000, Math.min(5000, deltaHU));
+
+    for (let y = 0; y < bboxH; y++) {
+        const py = minYFloor + y;
+        if (py < 0 || py >= height) continue;
+        const rowBase = py * width;
+        for (let x = 0; x < bboxW; x++) {
+            const px = minXFloor + x;
+            if (px < 0 || px >= width) continue;
+            const alpha = data[(y * bboxW + x) * 4 + 3];
+            if (alpha < 128) continue;
+            const idx = rowBase + px;
+            const sourceValue = baselineHU ? baselineHU[idx] : huData[idx];
+            huData[idx] = clampHU(sourceValue + safeDelta);
         }
     }
+}
+
+function stampFooterAnnotation(huData, width, height, roiEntries, delta = FOOTER_DELTA_HU, noteText = '') {
+    if (!roiEntries || roiEntries.length === 0) return;
+    // Build footer lines:
+    // 0..n) Optional note (up to 5 lines)
+    // last-1) "Name, Line Style[, +/-HU overlay] | ..."
+    // last) "NOT FOR DOSE CALCULATION"
+    const line1 = roiEntries.map(entry => {
+        const name = entry?.name || 'ROI';
+        const styleStr = (String(entry?.lineStyle).toLowerCase() === 'dotted') ? 'Dotted' : 'Solid';
+        const d = entry?.deltaHU;
+        let overlay = '';
+        if (Number.isFinite(d) && d !== 0) {
+            overlay = `, ${d > 0 ? '+' : ''}${Math.round(d)} HU overlay`;
+        }
+        return `${name}, ${styleStr}${overlay}`;
+    }).join(' | ');
+    const line2 = 'NOT FOR DOSE CALCULATION';
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    // Prepare a measuring context first (height may change later and reset state)
+    let mctx = canvas.getContext('2d');
+    if (!mctx) return;
+    mctx.font = `${FOOTER_FONT_PX}px sans-serif`;
+    // Wrap note up to 5 lines across full width
+    const margin = 0; // full width
+    const hasNote = !!noteText && String(noteText).trim().length > 0;
+    let noteLines = [];
+    if (hasNote) {
+        const maxLines = 5;
+        const words = String(noteText).trim().split(/\s+/);
+        let current = '';
+        for (const w of words) {
+            const test = current ? current + ' ' + w : w;
+            const m = mctx.measureText(test);
+            if (m.width <= (width - margin * 2) || current.length === 0) {
+                current = test;
+            } else {
+                noteLines.push(current);
+                current = w;
+                if (noteLines.length >= maxLines - 1) break;
+            }
+        }
+        if (noteLines.length < maxLines && current) noteLines.push(current);
+        if (noteLines.length > maxLines) noteLines = noteLines.slice(0, maxLines);
+        // Ellipsis if overflow
+        if (noteLines.length === maxLines) {
+            const last = noteLines[maxLines - 1];
+            let trimmed = last;
+            while (mctx.measureText(trimmed + '…').width > (width - margin * 2) && trimmed.length > 0) {
+                trimmed = trimmed.slice(0, -1);
+            }
+            noteLines[maxLines - 1] = trimmed + (trimmed === last ? '' : '…');
+        }
+    }
+    const linesCount = 2 + noteLines.length;
+    const lineGap = Math.max(2, Math.round(FOOTER_FONT_PX * 0.3));
+    canvas.height = linesCount * FOOTER_FONT_PX + lineGap * (linesCount + 1);
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.font = `${FOOTER_FONT_PX}px sans-serif`;
+    ctx.fillStyle = '#ffffff';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
+    let drawY = lineGap;
+    for (const ln of noteLines) {
+        ctx.fillText(ln, margin, drawY);
+        drawY += FOOTER_FONT_PX + lineGap;
+    }
+    ctx.fillText(line1, margin, drawY);
+    drawY += FOOTER_FONT_PX + lineGap;
+    ctx.fillText(line2, margin, drawY);
+
+    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = img.data;
+    const startRow = height - canvas.height;
+    const clampHU = (val) => Math.max(-1024, Math.min(12000, val));
+    for (let y = 0; y < canvas.height; y++) {
+        const py = startRow + y;
+        if (py < 0 || py >= height) continue;
+        const rowBase = py * width;
+        for (let x = 0; x < canvas.width; x++) {
+            const alpha = data[(y * canvas.width + x) * 4 + 3];
+            if (alpha < 128) continue;
+            const idx = rowBase + x;
+            huData[idx] = clampHU(FOOTER_TEXT_HU);
+        }
+    }
+}
+
+function burnSlices(sourceSlices, burnInSettings, options = {}) {
+    if (!sourceSlices || sourceSlices.length === 0) return [];
+    if (!burnInSettings || burnInSettings.length === 0) return sourceSlices.map(slice => ({ ...slice }));
+
+    const {
+        textEnabled = false,
+        textInterval = 5,
+        textDeltaHU = 100,
+        textFontPx = ptToPx(TEXT_FONT_PT_DEFAULT),
+        footerDelta = FOOTER_DELTA_HU,
+        progressCallback = null
+    } = options;
+
+    const totalSlices = sourceSlices.length;
+    const anyFillEnabled = burnInSettings.some(s => s.fill && Number.isFinite(s.fillDeltaHU));
+    const processed = [];
+
+    for (let sliceIdx = 0; sliceIdx < totalSlices; sliceIdx++) {
+        const ctFile = sourceSlices[sliceIdx];
+        const dataSet = ctFile?.dataSet;
+        if (!dataSet || !dataSet.elements?.x7fe00010) {
+            processed.push(ctFile);
+            if (progressCallback) {
+                try { progressCallback(sliceIdx + 1, totalSlices); } catch (err) { console.debug('burnSlices progress callback error:', err); }
+            }
+            continue;
+        }
+
+        const width = dataSet.uint16(Tag.Columns) || 512;
+        const height = dataSet.uint16(Tag.Rows) || 512;
+        const pixelSpacing = (dataSet.string(Tag.PixelSpacing) || '1\\1').split('\\').map(parseFloat);
+        const pixelDataElement = dataSet.elements.x7fe00010;
+        const offset = pixelDataElement.dataOffset;
+        const length = pixelDataElement.length;
+
+        let pixelData = ctFile.modifiedPixelData;
+        if (!pixelData) {
+            try {
+                if (ctFile.byteArray) pixelData = new Int16Array(ctFile.byteArray.buffer, offset, length / 2);
+                else if (dataSet.byteArray) pixelData = new Int16Array(dataSet.byteArray.buffer, offset, length / 2);
+            } catch (err) {
+                console.error('burnSlices: failed to access pixel data', err);
+            }
+        }
+        if (!pixelData) {
+            processed.push(ctFile);
+            if (progressCallback) {
+                try { progressCallback(sliceIdx + 1, totalSlices); } catch (err) { console.debug('burnSlices progress callback error:', err); }
+            }
+            continue;
+        }
+
+        const slope = dataSet.floatString(Tag.RescaleSlope) || 1;
+        const intercept = dataSet.floatString(Tag.RescaleIntercept) || 0;
+        const huData = new Float32Array(pixelData.length);
+        for (let i = 0; i < pixelData.length; i++) {
+            huData[i] = pixelData[i] * slope + intercept;
+        }
+
+        const baselineHU = anyFillEnabled ? Float32Array.from(huData) : null;
+        const imagePosition = (dataSet.string(Tag.ImagePositionPatient) || '0\\0\\0').split('\\').map(parseFloat);
+        const imageOrientation = (dataSet.string(Tag.ImageOrientationPatient) || '1\\0\\0\\0\\1\\0').split('\\').map(parseFloat);
+        const rowCos = [imageOrientation[0], imageOrientation[1], imageOrientation[2]];
+        const colCos = [imageOrientation[3], imageOrientation[4], imageOrientation[5]];
+        const sopUID = dataSet.string(Tag.SOPInstanceUID);
+
+        const roiPolysForSlice = new Map();
+        const contourSegments = new Map();
+
+        burnInSettings.forEach(setting => {
+            (RTSSMarks || []).forEach(mark => {
+                if ((mark.sop || mark.sopInstanceUID) !== sopUID) return;
+                if (!(mark.showName === setting.name || mark.hideName === setting.name)) return;
+                if (!mark.pointArray || mark.pointArray.length === 0) return;
+
+                const points3D = mark.pointArray.map(p => [p.x, p.y, p.z]);
+                const polygon = points3D.map(pt => {
+                    const dx = pt[0] - imagePosition[0];
+                    const dy = pt[1] - imagePosition[1];
+                    const px = (dx * rowCos[0] + dy * colCos[0]) / (pixelSpacing[0] || 1);
+                    const py = (dx * rowCos[1] + dy * colCos[1]) / (pixelSpacing[1] || 1);
+                    return [px, py];
+                });
+                if (polygon.length < 3) return;
+
+                if (!roiPolysForSlice.has(setting.name)) roiPolysForSlice.set(setting.name, []);
+                roiPolysForSlice.get(setting.name).push(polygon);
+
+                if (setting.contour) {
+                    const densePoints = densifyContour(points3D, 1.0);
+                    const pixelPoints = densePoints.map(point => {
+                        const dx = point[0] - imagePosition[0];
+                        const dy = point[1] - imagePosition[1];
+                        const px = (dx * rowCos[0] + dy * colCos[0]) / (pixelSpacing[0] || 1);
+                        const py = (dx * rowCos[1] + dy * colCos[1]) / (pixelSpacing[1] || 1);
+                        return [Math.round(px), Math.round(py)];
+                    });
+                    if (!contourSegments.has(setting.name)) contourSegments.set(setting.name, []);
+                    contourSegments.get(setting.name).push({
+                        points: pixelPoints,
+                        lineStyle: setting.lineStyle,
+                        lineWidth: setting.lineWidth,
+                        huValue: setting.huValue
+                    });
+                }
+            });
+        });
+
+        if (anyFillEnabled) {
+            burnInSettings.forEach(setting => {
+                if (!setting.fill) return;
+                if (!Number.isFinite(setting.fillDeltaHU)) return;
+                const polys = roiPolysForSlice.get(setting.name);
+                if (polys && polys.length) {
+                    applyFillHUFromPolygons(huData, baselineHU || huData, width, height, polys, setting.fillDeltaHU);
+                }
+            });
+        }
+
+        contourSegments.forEach((segments) => {
+            segments.forEach(segment => {
+                const patternStep = segment.lineStyle === 'dotted' ? 6 : 1; // align with external fixed pattern
+                for (let i = 0; i < segment.points.length; i++) {
+                    if (segment.lineStyle === 'dotted' && (i % patternStep) !== 0) continue;
+                    const [x, y] = segment.points[i];
+                    stampHU(huData, width, height, x, y, segment.huValue, segment.lineWidth || 2);
+                }
+            });
+        });
+
+        if (footerDelta) {
+            const footerEntries = burnInSettings.map(s => ({
+                name: s.name,
+                lineStyle: s.lineStyle,
+                deltaHU: (s.fill && Number.isFinite(s.fillDeltaHU)) ? s.fillDeltaHU : null
+            }));
+            const noteText = options && typeof options.noteText === 'string' ? options.noteText : '';
+            stampFooterAnnotation(huData, width, height, footerEntries, footerDelta, noteText);
+        }
+
+        // TODO: textEnabled support for future enhancement
+        if (textEnabled && sliceIdx % Math.max(1, textInterval) === 0) {
+            // Placeholder for future text stamping logic
+        }
+
+        const modifiedPixelData = new Int16Array(huData.length);
+        for (let i = 0; i < huData.length; i++) {
+            const rawValue = Math.round((huData[i] - intercept) / slope);
+            modifiedPixelData[i] = Math.max(-32768, Math.min(32767, rawValue));
+        }
+
+        processed.push({ ...ctFile, modifiedPixelData, huData });
+
+        if (progressCallback) {
+            try { progressCallback(sliceIdx + 1, totalSlices); } catch (err) { console.debug('burnSlices progress callback error:', err); }
+        }
+    }
+
+    return processed;
 }
 
 // Store original CT data for viewer
@@ -1259,134 +2150,33 @@ let processedCTData = [];
 let dicomViewer = null;
 
 async function burnInROIs() {
-    // Get burn-in configuration from the 4th viewport controls
-    let imageSetName = (document.getElementById('imageSetName')?.value || '').trim();
-    if (!imageSetName) {
-        // Default to CT_MMDDYY_Burn (StudyDate if available, else today)
-        const def = getDefaultSeriesName();
-        imageSetName = def;
-        const input = document.getElementById('imageSetName');
-        if (input) input.value = def;
-        // no blocking error — proceed with default
+    const config = collectBurnConfig();
+    if (!config) return;
+
+    if (window.previewMode) {
+        clearPreview();
     }
-    
-    // Collect burn-in settings from UI controls
-    const defaultHU = parseInt(document.getElementById('defaultHU').value) || 1000;
-    const lineStyleSel = document.querySelector('input[name="lineStyle"]:checked');
-    const lineStyle = lineStyleSel ? lineStyleSel.value : 'solid';
-    const lineWidthCtrl = document.getElementById('lineWidth');
-    const lineWidth = lineWidthCtrl
-        ? parseInt(lineWidthCtrl.value)
-        : (lineStyle === 'dotted' ? 2 : 1); // defaults: solid=1px, dotted=2px
-    
-    // Use selected ROIs with their individual HU values
-    const burnInSettings = [];
-    const burnNames = [];
-    roiData.forEach(roi => {
-        if (roi.selected) {
-            burnInSettings.push({
-                name: roi.name,
-                number: roi.number,
-                contour: true,
-                fill: false,
-                huValue: roi.huValue || defaultHU,
-                lineStyle,
-                lineWidth
-            });
-            burnNames.push(roi.name);
-        }
-    });
-    
-    if (burnInSettings.length === 0) {
-        showMessage('error', 'Please select at least one ROI for burn-in');
-        return;
-    }
-    
-    // Export mode: honor UI selection (Single vs Separate)
-    let separateSeries = false;
-    try {
-        const exportModeSel = document.querySelector('input[name="exportMode"]:checked');
-        separateSeries = (exportModeSel && exportModeSel.value === 'separate');
-    } catch (_) { /* fallback below */ }
-    // Backward-compatible fallback prompt only if UI control missing and multiple selected
-    if (burnInSettings.length > 1 && typeof separateSeries !== 'boolean') {
-        const oneSeries = window.confirm('Burn all selected ROIs into ONE series?\nClick Cancel to create a SEPARATE series per ROI.');
-        separateSeries = !oneSeries;
-    }
-    
+
+    const { burnInSettings, burnNames, separateSeries } = config;
     updateStatus('Processing burn-in...');
     updateProgress(0);
-    
-    // Store original CT data for viewer
+
     originalCTData = [...ctFiles];
-    processedCTData = [];
 
-    // Helper to process burn for a given single setting
-    const processSingleSetting = (setting) => {
-        const out = [];
-        for (let sliceIdx = 0; sliceIdx < ctFiles.length; sliceIdx++) {
-            const ctFile = ctFiles[sliceIdx];
-            const dataSet = ctFile.dataSet;
-            const width = dataSet.uint16(Tag.Columns);
-            const height = dataSet.uint16(Tag.Rows);
-            const pixelSpacingStr = dataSet.string(Tag.PixelSpacing);
-            const pixelSpacing = pixelSpacingStr ? pixelSpacingStr.split('\\').map(parseFloat) : [1, 1];
-            const pixelDataElement = dataSet.elements.x7fe00010;
-            if (!pixelDataElement) { console.error('No pixel data found'); continue; }
-            const offset = pixelDataElement.dataOffset;
-            const length = pixelDataElement.length;
-            const pixelData = new Int16Array(dataSet.byteArray.buffer, offset, length / 2);
-            const slope = dataSet.floatString(Tag.RescaleSlope) || 1;
-            const intercept = dataSet.floatString(Tag.RescaleIntercept) || 0;
-            const huData = new Float32Array(pixelData.length);
-            for (let i = 0; i < pixelData.length; i++) huData[i] = pixelData[i] * slope + intercept;
-            const imagePositionStr = dataSet.string(Tag.ImagePositionPatient);
-            const imagePosition = imagePositionStr ? imagePositionStr.split('\\').map(parseFloat) : [0, 0, 0];
-            const imageOrientationStr = dataSet.string(Tag.ImageOrientationPatient);
-            const imageOrientation = imageOrientationStr ? imageOrientationStr.split('\\').map(parseFloat) : [1,0,0,0,1,0];
-            const rowCos = [imageOrientation[0], imageOrientation[1], imageOrientation[2]];
-            const colCos = [imageOrientation[3], imageOrientation[4], imageOrientation[5]];
-            const sopUID = dataSet.string(Tag.SOPInstanceUID);
-
-            // Apply this setting only
-            RTSSMarks.forEach(mark => {
-                if ((mark.sop || mark.sopInstanceUID) !== sopUID) return;
-                if (!(mark.showName === setting.name || mark.hideName === setting.name)) return;
-                if (!mark.pointArray || mark.pointArray.length === 0) return;
-                const points3D = mark.pointArray.map(p => [p.x, p.y, p.z]);
-                const densePoints = densifyContour(points3D, 1.0);
-                const pixelPoints = [];
-                for (const point of densePoints) {
-                    const dx = point[0] - imagePosition[0];
-                    const dy = point[1] - imagePosition[1];
-                    const pixelX = (dx * rowCos[0] + dy * colCos[0]) / pixelSpacing[0];
-                    const pixelY = (dx * rowCos[1] + dy * colCos[1]) / pixelSpacing[1];
-                    pixelPoints.push([Math.round(pixelX), Math.round(pixelY)]);
-                }
-                const patternStep = setting.lineStyle === 'dotted' ? Math.max((setting.lineWidth || 2) + 1, 2) : 1;
-                for (let i = 0; i < pixelPoints.length; i++) {
-                    if (setting.lineStyle === 'dotted' && (i % patternStep) !== 0) continue;
-                    const [x, y] = pixelPoints[i];
-                    stampHU(huData, width, height, x, y, setting.huValue, setting.lineWidth);
-                }
-            });
-
-            const modifiedPixelData = new Int16Array(huData.length);
-            for (let i = 0; i < huData.length; i++) {
-                const rawValue = Math.round((huData[i] - intercept) / slope);
-                modifiedPixelData[i] = Math.max(-32768, Math.min(32767, rawValue));
-            }
-            out.push({ ...ctFile, modifiedPixelData, huData });
-            updateProgress((sliceIdx + 1) / ctFiles.length * 100);
-        }
-        return out;
+    const burnOptions = {
+        textEnabled: false,
+        textInterval: 1,
+        textDeltaHU: 100,
+        textFontPx: ptToPx(TEXT_FONT_PT_DEFAULT),
+        footerDelta: FOOTER_DELTA_HU,
+        noteText: config.noteText,
+        progressCallback: (current, total) => updateProgress((current / total) * 100)
     };
 
     if (separateSeries) {
-        // Build multiple series into a single ZIP with ROI-specific subfolders
         const seriesList = [];
         for (const setting of burnInSettings) {
-            const processed = processSingleSetting(setting);
+            const processed = burnSlices(ctFiles, [setting], burnOptions);
             seriesList.push({ processedCTs: processed, roiName: setting.name, hu: setting.huValue });
         }
         await exportMultipleSeriesToOneZip(seriesList);
@@ -1395,128 +2185,22 @@ async function burnInROIs() {
         return;
     }
 
-    // Combined path: Process each CT slice
-    for (let sliceIdx = 0; sliceIdx < ctFiles.length; sliceIdx++) {
-        const ctFile = ctFiles[sliceIdx];
-        const dataSet = ctFile.dataSet;
-        
-        // Get image dimensions and spacing
-        const width = dataSet.uint16(Tag.Columns);
-        const height = dataSet.uint16(Tag.Rows);
-        const pixelSpacingStr = dataSet.string(Tag.PixelSpacing);
-        const pixelSpacing = pixelSpacingStr ? pixelSpacingStr.split('\\').map(parseFloat) : [1, 1];
-        
-        // Get pixel data element
-        const pixelDataElement = dataSet.elements.x7fe00010;
-        let pixelData;
-        if (pixelDataElement) {
-            const offset = pixelDataElement.dataOffset;
-            const length = pixelDataElement.length;
-            pixelData = new Int16Array(dataSet.byteArray.buffer, offset, length / 2);
-        } else {
-            console.error('No pixel data found');
-            continue;
-        }
-        
-        // Get rescale values
-        const slope = dataSet.floatString(Tag.RescaleSlope) || 1;
-        const intercept = dataSet.floatString(Tag.RescaleIntercept) || 0;
-        
-        // Convert to HU
-        const huData = new Float32Array(pixelData.length);
-        for (let i = 0; i < pixelData.length; i++) {
-            huData[i] = pixelData[i] * slope + intercept;
-        }
-        
-        // Get image position and orientation
-        const imagePositionStr = dataSet.string(Tag.ImagePositionPatient);
-        const imagePosition = imagePositionStr ? imagePositionStr.split('\\').map(parseFloat) : [0, 0, 0];
-        const imageOrientationStr = dataSet.string(Tag.ImageOrientationPatient);
-        const imageOrientation = imageOrientationStr ? imageOrientationStr.split('\\').map(parseFloat) : [1,0,0,0,1,0];
-        const rowCos = [imageOrientation[0], imageOrientation[1], imageOrientation[2]];
-        const colCos = [imageOrientation[3], imageOrientation[4], imageOrientation[5]];
-        const sliceZ = imagePosition[2];
-        
-        // Get current slice SOP Instance UID
-        const sopUID = dataSet.string(Tag.SOPInstanceUID);
-        
-        // Process each ROI from RTSSMarks
-        burnInSettings.forEach(setting => {
-            // Find marks for this ROI and slice
-            RTSSMarks.forEach(mark => {
-                if ((mark.sop || mark.sopInstanceUID) !== sopUID) return;
-                // Must be the same ROI by name
-                if (!(mark.showName === setting.name || mark.hideName === setting.name)) return;
-                if (!mark.pointArray || mark.pointArray.length === 0) return;
+    processedCTData = burnSlices(ctFiles, burnInSettings, burnOptions);
 
-                // Convert pointArray to simple [x,y,z] list
-                const points3D = mark.pointArray.map(p => [p.x, p.y, p.z]);
-                
-                // Densify contour (match Python with 1mm spacing)
-                const densePoints = densifyContour(points3D, 1.0);
-                
-                // Transform patient coordinates to pixel coordinates (match axial overlay math)
-                const pixelPoints = [];
-                for (const point of densePoints) {
-                    const dx = point[0] - imagePosition[0];
-                    const dy = point[1] - imagePosition[1];
-                    const pixelX = (dx * rowCos[0] + dy * colCos[0]) / pixelSpacing[0];
-                    const pixelY = (dx * rowCos[1] + dy * colCos[1]) / pixelSpacing[1];
-                    pixelPoints.push([Math.round(pixelX), Math.round(pixelY)]);
-                }
-                
-                // Apply burn-in based on mode
-                if (setting.contour) {
-                    // Apply contour burn with style and width
-                    const patternStep = setting.lineStyle === 'dotted' ? Math.max((setting.lineWidth || 2) + 1, 2) : 1;
-                    for (let i = 0; i < pixelPoints.length; i++) {
-                        if (setting.lineStyle === 'dotted' && (i % patternStep) !== 0) continue;
-                        const [x, y] = pixelPoints[i];
-                        stampHU(huData, width, height, x, y, setting.huValue, setting.lineWidth);
-                    }
-                }
-            });
-        });
-        
-        // Convert HU back to pixel values
-        const modifiedPixelData = new Int16Array(huData.length);
-        for (let i = 0; i < huData.length; i++) {
-            const rawValue = Math.round((huData[i] - intercept) / slope);
-            modifiedPixelData[i] = Math.max(-32768, Math.min(32767, rawValue));
-        }
-        
-        // Store modified data for immediate display
-        const modifiedCT = {
-            ...ctFile,
-            modifiedPixelData: modifiedPixelData,
-            huData: huData
-        };
-        
-        processedCTData.push(modifiedCT);
-        
-        // Update progress
-        updateProgress((sliceIdx + 1) / ctFiles.length * 100);
-    }
-    
-    // Export modified DICOM files
     window.tempExportPairs = burnInSettings.map(s => `${s.name}_${s.huValue}HU`);
     await exportModifiedDICOM(processedCTData);
     window.tempExportPairs = undefined;
-    
-    // Replace current CT data with processed data for immediate display
+
     ctFiles = processedCTData;
     if (window.simpleViewerData) window.simpleViewerData.isShowingBurned = true;
     window.showBurnValidation = true;
     window.lastBurnNames = burnNames;
-    
-    // Clear volume data cache to force regeneration
     window.volumeData = null;
-    
-    // Refresh the current display to show burned-in data
+
     displaySimpleViewer();
-    
-    updateStatus('Burn-in complete! Files saved to modified/ folder.');
-    showMessage('success', 'ROIs have been burned into the images and saved to modified/ folder.');
+
+    updateStatus('Burn-in complete!');
+    showMessage('success', 'ROIs have been burned into the images and exported.');
 }
 
 // Densify contour - insert points so edges are ≤ max_mm apart (matches Python)
@@ -2074,6 +2758,18 @@ async function openViewerForPreview() {
         // Initialize simple viewer
         await initializeSimpleViewer();
         displaySimpleViewer();
+
+        // Adapt footer note maxlength based on image width and font (3 lines, full width)
+        try {
+            const first = (ctFiles && ctFiles[0] && ctFiles[0].dataSet) ? ctFiles[0].dataSet : null;
+            const width = first ? (first.uint16 ? (first.uint16(Tag.Columns) || 512) : 512) : 512;
+            const charWidth = Math.max(6, Math.round(FOOTER_FONT_PX * 0.6));
+            const usable = Math.max(0, width); // full image width
+            const perLine = Math.max(0, Math.floor(usable / charWidth));
+            const maxChars = Math.max(0, perLine * 3);
+            const noteEl = document.getElementById('footerNote');
+            if (noteEl) noteEl.maxLength = Math.max(0, maxChars);
+        } catch (e) { /* ignore */ }
     } catch (error) {
         console.error('Error opening viewer:', error);
         showMessage('error', 'Failed to open viewer: ' + error.message);
@@ -2127,8 +2823,9 @@ async function initializeSimpleViewer() {
         processedCTData = [];
     }
     
+    const seriesInit = getActiveSeries();
     window.simpleViewerData = {
-        currentSlice: Math.floor(ctFiles.length / 2),
+        currentSlice: Math.floor((seriesInit.length || 1) / 2),
         isShowingBurned: false,
         windowWidth: 400,
         windowLevel: 40
@@ -2146,14 +2843,21 @@ async function initializeSimpleViewer() {
     const slider = document.getElementById('sliceSlider');
     if (slider) {
         slider.min = 0;
-        slider.max = ctFiles.length - 1;
+        slider.max = Math.max(0, seriesInit.length - 1);
         slider.value = window.simpleViewerData.currentSlice;
     }
     
     const sliceInfo = document.getElementById('sliceInfo');
     if (sliceInfo) {
-        sliceInfo.textContent = `${window.simpleViewerData.currentSlice + 1}/${ctFiles.length}`;
+        sliceInfo.textContent = `${window.simpleViewerData.currentSlice + 1}/${seriesInit.length}`;
     }
+}
+
+function getActiveSeries() {
+    const usePreview = (window.previewMode && previewIsRealBurn && Array.isArray(previewBurnedCTData) && previewBurnedCTData.length);
+    if (usePreview) return previewBurnedCTData;
+    if (window.simpleViewerData && window.simpleViewerData.isShowingBurned && Array.isArray(processedCTData) && processedCTData.length) return processedCTData;
+    return Array.isArray(ctFiles) ? ctFiles : [];
 }
 
 // Setup mouse interactions for viewports
@@ -2398,10 +3102,12 @@ function handleMouseUp(e, viewportName) {
 
 // Navigate to a different slice
 function navigateSlice(delta) {
-    if (!window.simpleViewerData || ctFiles.length === 0) return;
-    
+    if (!window.simpleViewerData) return;
+    const series = getActiveSeries();
+    if (!series || series.length === 0) return;
+
     const newSlice = window.simpleViewerData.currentSlice + delta;
-    if (newSlice >= 0 && newSlice < ctFiles.length) {
+    if (newSlice >= 0 && newSlice < series.length) {
         window.simpleViewerData.currentSlice = newSlice;
         displaySimpleViewer();
         
@@ -2450,8 +3156,10 @@ function displaySimpleViewer() {
     }
     
     const slice = window.simpleViewerData.currentSlice;
-    
-    const ctData = window.simpleViewerData.isShowingBurned ? processedCTData[slice] : ctFiles[slice];
+
+    const series = getActiveSeries();
+
+    const ctData = series[slice];
     
     if (!ctData) {
         console.error('No CT data for slice:', slice);
@@ -2641,6 +3349,8 @@ function displaySimpleViewer() {
     drawROIOverlayOnCanvas(ctx, ctData, slice, width, height, axialDisplay);
     // Draw crosshair
     drawCrosshairAxial(ctx, axialDisplay, width, height);
+
+    // No overlay footer during preview; preview displays burned pixels only
     
     // Restore context state
     ctx.restore();
@@ -2649,26 +3359,36 @@ function displaySimpleViewer() {
     renderOtherViews(slice);
     
     // Update slice info
-    document.getElementById('sliceSlider').value = slice;
-    document.getElementById('sliceSlider').max = ctFiles.length - 1;
-    document.getElementById('sliceInfo').textContent = `${slice + 1}/${ctFiles.length}`;
+    const sliderEl = document.getElementById('sliceSlider');
+    if (sliderEl) {
+        sliderEl.value = slice;
+        sliderEl.max = Math.max(0, series.length - 1);
+    }
+    const sliceInfoEl = document.getElementById('sliceInfo');
+    if (sliceInfoEl) {
+        sliceInfoEl.textContent = `${slice + 1}/${series.length}`;
+    }
     
     // Update viewport info
     const infoElement = document.getElementById('info-axial');
     if (infoElement) {
-        infoElement.innerHTML = `Slice: ${slice + 1}/${ctFiles.length}<br>WL: ${windowWidth}/${windowLevel}`;
+        const seriesLen = getActiveSeries().length || 0;
+        infoElement.innerHTML = `Slice: ${slice + 1}/${seriesLen}<br>WL: ${windowWidth}/${windowLevel}`;
     }
 }
 
 // Create volume data for MPR reconstruction
 async function createVolumeData() {
-    if (ctFiles.length === 0) return null;
+    const usePreview = (window.previewMode && previewIsRealBurn && previewBurnedCTData && previewBurnedCTData.length);
+    const useProcessed = (!usePreview && window.simpleViewerData && window.simpleViewerData.isShowingBurned && processedCTData && processedCTData.length);
+    const series = usePreview ? previewBurnedCTData : (useProcessed ? processedCTData : ctFiles);
+    if (!series || series.length === 0) return null;
     
     const volume = {
         data: [],
         width: 0,
         height: 0,
-        depth: ctFiles.length,
+        depth: series.length,
         pixelSpacing: null,
         sliceThickness: null,
         sliceSpacing: null,
@@ -2681,8 +3401,8 @@ async function createVolumeData() {
     };
     
     // Load all slices
-    for (let i = 0; i < ctFiles.length; i++) {
-        const ctData = ctFiles[i];
+    for (let i = 0; i < series.length; i++) {
+        const ctData = series[i];
         if (!ctData.dataSet) continue;
         
         // Get dimensions from first slice
@@ -3190,7 +3910,8 @@ function resetAllViews() {
             dicomViewer.resetView(viewportId);
         });
     } else if (window.simpleViewerData) {
-        window.simpleViewerData.currentSlice = Math.floor(ctFiles.length / 2);
+        const len = getActiveSeries().length || 1;
+        window.simpleViewerData.currentSlice = Math.floor(len / 2);
         window.simpleViewerData.windowWidth = 400;
         window.simpleViewerData.windowLevel = 40;
         displaySimpleViewer();
@@ -3283,4 +4004,3 @@ function showMessage(type, message) {
         messageDiv.className = 'status-message';
     }, 5000);
 }
-

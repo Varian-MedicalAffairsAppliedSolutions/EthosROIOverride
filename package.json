@@ -1,13 +1,17 @@
 {
     "name": "roi-override-electron",
-    "version": "1.0.2",
+    "version": "1.1.0",
     "buildNumber": 1,
     "description": "ROI Override Tool packaged as an Electron desktop app",
     "main": "main.js",
     "scripts": {
         "start": "electron .",
         "dev": "electron .",
-        "build": "npm run icon && set CSC_IDENTITY_AUTO_DISCOVERY=false&& electron-builder -w portable",
+        "build": "npm run build:win",
+        "build:win": "npm run icon && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder -w portable",
+        "build:mac": "npm run icon && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder -m dmg",
+        "build:linux": "npm run icon && electron-builder -l AppImage",
+        "pack": "electron-builder --dir",
         "icon": "node scripts/gen_icon.js"
     },
     "author": "",
@@ -15,6 +19,7 @@
     "devDependencies": {
         "electron": "^38.1.0",
         "electron-builder": "24.13.3",
+        "cross-env": "^7.0.3",
         "png-to-ico": "2.1.8",
         "sharp": "0.33.4"
     },
@@ -38,6 +43,20 @@
             "artifactName": "ROI-Override-${version}.exe",
             "signAndEditExecutable": false,
             "icon": "build/icon.ico"
+        },
+        "mac": {
+            "target": [
+                "dmg"
+            ],
+            "artifactName": "ROI-Override-${version}.dmg",
+            "icon": "build/icon.icns"
+        },
+        "linux": {
+            "target": [
+                "AppImage"
+            ],
+            "artifactName": "ROI-Override-${version}.AppImage",
+            "icon": "build/icons/png"
         }
     }
 }
