@@ -4,6 +4,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## 1.1.1 — 2025-10-08
+
+- Default hard-burned warning text at the top-left of every slice: "NOT VALIDATED FOR CLINICAL USE".
+- Applies to both preview and exported series (burned into pixels at ~1000 HU).
+
 ## 1.1.0 — 2025-10-06
 
 - Per-ROI burn controls: outline style, line width, and fill ΔHU overrides with +/- 50 HU steppers.
